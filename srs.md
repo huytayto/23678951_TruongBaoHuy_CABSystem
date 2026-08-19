@@ -369,8 +369,244 @@ flowchart TD
     class O1,O2 operation
 
 ```
+## Bước 7 - Functional Requirement
+Được. Dựa trên context hiện tại, phần **Functional Requirement (FR)** nên đi sâu hơn BR: mô tả **hệ thống phải thực hiện chức năng gì**, có actor, trigger, business rule và kết quả mong đợi.
 
+Tôi đề xuất cấu trúc FR theo 9 nhóm: **Authentication, Customer, Booking, Matching, Trip/Tracking, Pricing & Payment, Notification, Operation/Admin, Rating & Audit**.
 
+## 6. Functional Requirement
 
+### 6.1 Authentication & Account Management
 
+| Mã     | Functional Requirement                                                                               | Actor                   | Priority |
+| ------ | ---------------------------------------------------------------------------------------------------- | ----------------------- | -------- |
+| FR-001 | Hệ thống phải cho phép Customer đăng ký tài khoản bằng thông tin định danh được cấu hình cho MVP.    | Customer                | Must     |
+| FR-002 | Hệ thống phải cho phép người dùng đăng nhập bằng thông tin xác thực hợp lệ.                          | Customer, Driver, Admin | Must     |
+| FR-003 | Hệ thống phải xác thực thông tin đăng nhập trước khi cấp quyền truy cập các chức năng tương ứng.     | System                  | Must     |
+| FR-004 | Hệ thống phải cho phép Customer cập nhật thông tin cá nhân cơ bản.                                   | Customer                | Must     |
+| FR-005 | Hệ thống phải cho phép Driver cập nhật hồ sơ và thông tin phương tiện theo quyền được cấp.           | Driver, Operation       | Must     |
+| FR-006 | Hệ thống phải phân biệt vai trò Customer, Driver, Operation Staff và Admin khi người dùng đăng nhập. | System                  | Must     |
+| FR-007 | Hệ thống phải từ chối truy cập chức năng nếu người dùng không có quyền tương ứng.                    | System                  | Must     |
 
+---
+
+### 6.2 Customer & Booking
+
+| Mã     | Functional Requirement                                                                     | Actor    | Priority |
+| ------ | ------------------------------------------------------------------------------------------ | -------- | -------- |
+| FR-008 | Hệ thống phải cho phép Customer nhập điểm đón và điểm đến.                                 | Customer | Must     |
+| FR-009 | Hệ thống phải cho phép Customer lựa chọn loại xe/dịch vụ được hỗ trợ.                      | Customer | Must     |
+| FR-010 | Hệ thống phải nhận yêu cầu đặt xe và tạo booking tương ứng.                                | Customer | Must     |
+| FR-011 | Hệ thống phải kiểm tra các thông tin bắt buộc trước khi tạo booking.                       | System   | Must     |
+| FR-012 | Hệ thống phải tạo mã định danh duy nhất cho mỗi booking/chuyến xe.                         | System   | Must     |
+| FR-013 | Hệ thống phải ghi nhận thời gian tạo booking, Customer, điểm đón, điểm đến và loại xe.     | System   | Must     |
+| FR-014 | Hệ thống phải xác nhận cho Customer rằng yêu cầu đặt xe đã được tiếp nhận.                 | System   | Must     |
+| FR-015 | Hệ thống phải hiển thị trạng thái hiện tại của booking cho Customer.                       | Customer | Must     |
+| FR-016 | Hệ thống phải ngăn Customer tạo các booking không hợp lệ theo business rule được cấu hình. | System   | Must     |
+
+---
+
+### 6.3 Driver Matching
+
+| Mã     | Functional Requirement                                                                                                                           | Actor  | Priority |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------- |
+| FR-017 | Hệ thống phải xác định các Driver đang ở trạng thái sẵn sàng nhận chuyến.                                                                        | System | Must     |
+| FR-018 | Hệ thống phải sử dụng vị trí hiện tại của Driver để xác định Driver phù hợp với booking.                                                         | System | Must     |
+| FR-019 | Hệ thống phải gửi yêu cầu nhận chuyến tới Driver phù hợp.                                                                                        | System | Must     |
+| FR-020 | Hệ thống phải ghi nhận phản hồi của Driver đối với yêu cầu nhận chuyến.                                                                          | System | Must     |
+| FR-021 | Hệ thống phải xác định yêu cầu nhận chuyến đã timeout nếu Driver không phản hồi trong khoảng thời gian được cấu hình.                            | System | Must     |
+| FR-022 | Khi Driver từ chối hoặc timeout, hệ thống phải thực hiện matching lại với Driver khác.                                                           | System | Must     |
+| FR-023 | Hệ thống không được gửi cùng một booking tới Driver đã từ chối booking đó trong cùng vòng matching, trừ khi có business rule khác được cấu hình. | System | Must     |
+| FR-024 | Hệ thống phải xác nhận Driver đầu tiên đáp ứng hợp lệ cho booking theo cơ chế locking/concurrency phù hợp.                                       | System | Must     |
+| FR-025 | Hệ thống phải cập nhật booking sang trạng thái đã có Driver khi matching thành công.                                                             | System | Must     |
+| FR-026 | Nếu không còn Driver phù hợp, hệ thống phải cập nhật booking sang trạng thái không tìm được Driver.                                              | System | Must     |
+| FR-027 | Hệ thống phải thông báo cho Customer khi không tìm được Driver.                                                                                  | System | Must     |
+
+> **Open point:** giá trị timeout, bán kính tìm Driver và tiêu chí “phù hợp” chưa được chốt trong Business Requirement và cần được xác nhận.
+
+---
+
+### 6.4 Trip Management & Tracking
+
+| Mã     | Functional Requirement                                                                            | Actor    | Priority |
+| ------ | ------------------------------------------------------------------------------------------------- | -------- | -------- |
+| FR-028 | Hệ thống phải quản lý trạng thái vòng đời của chuyến xe.                                          | System   | Must     |
+| FR-029 | Hệ thống phải cho phép Driver cập nhật trạng thái “Đã đến điểm đón”.                              | Driver   | Must     |
+| FR-030 | Hệ thống phải cho phép Driver cập nhật trạng thái “Đã đón khách”.                                 | Driver   | Must     |
+| FR-031 | Hệ thống phải cho phép Driver cập nhật trạng thái “Đang di chuyển”.                               | Driver   | Must     |
+| FR-032 | Hệ thống phải cho phép Driver cập nhật trạng thái “Hoàn thành”.                                   | Driver   | Must     |
+| FR-033 | Hệ thống phải kiểm tra tính hợp lệ của chuyển đổi trạng thái trước khi cập nhật.                  | System   | Must     |
+| FR-034 | Hệ thống phải cập nhật trạng thái chuyến cho Customer khi trạng thái thay đổi.                    | System   | Must     |
+| FR-035 | Hệ thống phải cung cấp cho Customer khả năng theo dõi trạng thái chuyến gần realtime.             | Customer | Must     |
+| FR-036 | Hệ thống phải sử dụng Map/Location Provider để hỗ trợ thông tin vị trí phục vụ matching/tracking. | System   | Must     |
+| FR-037 | Hệ thống phải ghi nhận các sự kiện trạng thái quan trọng của chuyến để phục vụ tra cứu.           | System   | Must     |
+
+---
+
+### 6.5 Pricing
+
+| Mã     | Functional Requirement                                                     | Actor  | Priority |
+| ------ | -------------------------------------------------------------------------- | ------ | -------- |
+| FR-038 | Hệ thống phải xác định mức cước dựa trên loại dịch vụ và thông tin chuyến. | System | Must     |
+| FR-039 | Hệ thống phải tính cước cuối chuyến khi Driver hoàn thành chuyến.          | System | Must     |
+| FR-040 | Hệ thống phải lưu lại số tiền cước cuối cùng của chuyến.                   | System | Must     |
+| FR-041 | Hệ thống phải cung cấp số tiền cần thanh toán cho Customer.                | System | Must     |
+| FR-042 | Hệ thống không được áp dụng surge/dynamic pricing trong MVP.               | System | Must     |
+
+> **Open point:** công thức pricing cụ thể chưa được chốt, do đó FR-038 cần được bổ sung rule chi tiết sau khi Business xác nhận.
+
+---
+
+### 6.6 Payment
+
+| Mã     | Functional Requirement                                                                                      | Actor    | Priority |
+| ------ | ----------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| FR-043 | Hệ thống phải cho phép Customer lựa chọn thanh toán tiền mặt hoặc thanh toán điện tử.                       | Customer | Must     |
+| FR-044 | Đối với thanh toán điện tử, hệ thống phải gửi yêu cầu thanh toán tới Payment Provider.                      | System   | Must     |
+| FR-045 | Hệ thống phải nhận và xử lý kết quả giao dịch từ Payment Provider.                                          | System   | Must     |
+| FR-046 | Hệ thống phải cập nhật trạng thái giao dịch thành công khi Payment Provider xác nhận thanh toán thành công. | System   | Must     |
+| FR-047 | Hệ thống phải ghi nhận giao dịch thất bại khi Payment Provider trả về kết quả thất bại.                     | System   | Must     |
+| FR-048 | Hệ thống phải thông báo cho Customer khi thanh toán điện tử thất bại.                                       | System   | Must     |
+| FR-049 | Hệ thống phải cho phép Customer thực hiện retry thanh toán theo cơ chế được cấu hình.                       | Customer | Must     |
+| FR-050 | Hệ thống phải đảm bảo việc retry không tạo ra giao dịch thanh toán trùng cho cùng một nghĩa vụ thanh toán.  | System   | Must     |
+| FR-051 | Hệ thống không được lưu trực tiếp thông tin thẻ hoặc thông tin thanh toán nhạy cảm của Customer.            | System   | Must     |
+| FR-052 | Hệ thống phải lưu thông tin tham chiếu giao dịch cần thiết để tra cứu và đối soát.                          | System   | Must     |
+| FR-053 | Hệ thống phải hiển thị lịch sử thanh toán của Customer.                                                     | Customer | Must     |
+
+---
+
+### 6.7 Notification
+
+| Mã     | Functional Requirement                                                                             | Actor  | Priority |
+| ------ | -------------------------------------------------------------------------------------------------- | ------ | -------- |
+| FR-054 | Hệ thống phải gửi thông báo khi booking được tiếp nhận.                                            | System | Must     |
+| FR-055 | Hệ thống phải gửi thông báo khi Driver nhận chuyến.                                                | System | Must     |
+| FR-056 | Hệ thống phải gửi thông báo khi Driver đến điểm đón.                                               | System | Must     |
+| FR-057 | Hệ thống phải gửi thông báo khi chuyến hoàn thành.                                                 | System | Must     |
+| FR-058 | Hệ thống phải gửi thông báo kết quả thanh toán cho Customer.                                       | System | Must     |
+| FR-059 | Hệ thống phải gửi thông báo chuyến mới cho Driver phù hợp.                                         | System | Must     |
+| FR-060 | Hệ thống phải ghi nhận trạng thái gửi thông báo để phục vụ monitoring và troubleshooting.          | System | Should   |
+| FR-061 | Hệ thống phải tách logic nghiệp vụ khỏi Notification Provider thông qua một abstraction/interface. | System | Must     |
+| FR-062 | Hệ thống phải cho phép thay thế hoặc bổ sung Notification Provider trong tương lai.                | System | Should   |
+
+---
+
+### 6.8 Driver Management
+
+| Mã     | Functional Requirement                                                                            | Actor     | Priority |
+| ------ | ------------------------------------------------------------------------------------------------- | --------- | -------- |
+| FR-063 | Hệ thống phải cho phép Driver chuyển trạng thái sẵn sàng nhận chuyến.                             | Driver    | Must     |
+| FR-064 | Hệ thống phải cho phép Driver chuyển trạng thái không sẵn sàng nhận chuyến.                       | Driver    | Must     |
+| FR-065 | Hệ thống chỉ được đưa Driver đang sẵn sàng vào danh sách matching.                                | System    | Must     |
+| FR-066 | Hệ thống phải lưu trạng thái hiện tại của Driver.                                                 | System    | Must     |
+| FR-067 | Hệ thống phải hiển thị danh sách và trạng thái Driver cho Operation Staff.                        | Operation | Must     |
+| FR-068 | Hệ thống phải cập nhật trạng thái Driver phù hợp sau khi Driver nhận/thực hiện/hoàn thành chuyến. | System    | Must     |
+
+---
+
+### 6.9 Operation & Admin
+
+| Mã     | Functional Requirement                                                                             | Actor     | Priority |
+| ------ | -------------------------------------------------------------------------------------------------- | --------- | -------- |
+| FR-069 | Hệ thống phải cung cấp màn hình để Operation Staff xem các chuyến đang diễn ra.                    | Operation | Must     |
+| FR-070 | Hệ thống phải hiển thị trạng thái hiện tại của từng chuyến.                                        | Operation | Must     |
+| FR-071 | Hệ thống phải hiển thị Driver đang được phân công cho chuyến.                                      | Operation | Must     |
+| FR-072 | Hệ thống phải cung cấp khả năng tra cứu lịch sử chuyến.                                            | Operation | Must     |
+| FR-073 | Hệ thống phải cung cấp khả năng tra cứu lịch sử giao dịch.                                         | Operation | Must     |
+| FR-074 | Hệ thống phải cho phép Operation Staff xử lý các trường hợp chuyến lỗi theo quyền được cấp.        | Operation | Must     |
+| FR-075 | Hệ thống phải yêu cầu xác nhận trước các thao tác quản trị có khả năng thay đổi trạng thái chuyến. | System    | Should   |
+| FR-076 | Hệ thống phải phân biệt quyền của Admin và Operation Staff.                                        | System    | Must     |
+| FR-077 | Hệ thống phải hạn chế các thao tác quản trị nhạy cảm đối với Operation Staff không có quyền.       | System    | Must     |
+
+---
+
+### 6.10 Rating
+
+| Mã     | Functional Requirement                                                     | Actor    | Priority |
+| ------ | -------------------------------------------------------------------------- | -------- | -------- |
+| FR-078 | Hệ thống phải cho phép Customer đánh giá Driver sau khi chuyến hoàn thành. | Customer | Must     |
+| FR-079 | Hệ thống phải cho phép Customer gửi rating theo thang điểm được cấu hình.  | Customer | Must     |
+| FR-080 | Hệ thống phải lưu rating gắn với chuyến và Driver tương ứng.               | System   | Must     |
+| FR-081 | Hệ thống không được cho phép Customer đánh giá cùng một chuyến nhiều lần.  | System   | Must     |
+
+---
+
+### 6.11 History & Audit
+
+| Mã     | Functional Requirement                                                                                  | Actor    | Priority |
+| ------ | ------------------------------------------------------------------------------------------------------- | -------- | -------- |
+| FR-082 | Hệ thống phải lưu lịch sử chuyến của Customer.                                                          | System   | Must     |
+| FR-083 | Hệ thống phải cho phép Customer xem lịch sử chuyến của chính mình.                                      | Customer | Must     |
+| FR-084 | Hệ thống phải lưu các sự kiện quan trọng trong vòng đời chuyến.                                         | System   | Must     |
+| FR-085 | Hệ thống phải ghi audit log đối với các thao tác quản trị quan trọng.                                   | System   | Must     |
+| FR-086 | Audit log phải chứa tối thiểu thông tin người thực hiện, thời gian, hành động và đối tượng bị tác động. | System   | Must     |
+| FR-087 | Hệ thống phải hạn chế quyền truy cập audit log theo role/permission.                                    | System   | Must     |
+
+---
+
+## 6.12 Business Status Model
+
+Để các Functional Requirement không bị mâu thuẫn với nhau, nên chuẩn hóa lifecycle của Booking/Trip:
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+
+    CREATED --> SEARCHING_DRIVER
+
+    SEARCHING_DRIVER --> DRIVER_ASSIGNED
+    SEARCHING_DRIVER --> NO_DRIVER_FOUND
+
+    NO_DRIVER_FOUND --> [*]
+
+    DRIVER_ASSIGNED --> DRIVER_EN_ROUTE
+    DRIVER_EN_ROUTE --> DRIVER_ARRIVED
+    DRIVER_ARRIVED --> PASSENGER_PICKED_UP
+    PASSENGER_PICKED_UP --> IN_PROGRESS
+    IN_PROGRESS --> COMPLETED
+
+    COMPLETED --> PAYMENT_PENDING
+
+    PAYMENT_PENDING --> PAID
+    PAYMENT_PENDING --> PAYMENT_FAILED
+
+    PAYMENT_FAILED --> PAYMENT_RETRY
+    PAYMENT_RETRY --> PAYMENT_PENDING
+
+    PAYMENT_FAILED --> PAYMENT_PENDING: Retry later
+
+    PAID --> [*]
+```
+
+### 6.13 Traceability giữa BR và FR
+
+| Business Requirement | Functional Requirements                                          |
+| -------------------- | ---------------------------------------------------------------- |
+| BR-01                | FR-001 → FR-016                                                  |
+| BR-02                | FR-017 → FR-020, FR-024 → FR-026                                 |
+| BR-03                | FR-021 → FR-023                                                  |
+| BR-04                | FR-028 → FR-037                                                  |
+| BR-05                | FR-038 → FR-042                                                  |
+| BR-06                | FR-043 → FR-049                                                  |
+| BR-07                | FR-050 → FR-052                                                  |
+| BR-08                | FR-054 → FR-062                                                  |
+| BR-09                | FR-069 → FR-075                                                  |
+| BR-10                | FR-006, FR-007, FR-076, FR-077                                   |
+| BR-11                | FR-084 → FR-087                                                  |
+| BR-12                | FR-061, FR-062 và các yêu cầu kiến trúc/NFR liên quan            |
+| BR-13                | FR-061, FR-062 và abstraction tương ứng cho Payment/Map Provider |
+
+### Một số điểm cần Business chốt trước khi khóa FR
+
+1. **Authentication:** đăng ký bằng email, phone hay phương thức nào?
+2. **Matching:** bán kính tìm Driver, thứ tự ưu tiên và số vòng reassign.
+3. **Timeout:** Driver có bao nhiêu giây để accept/reject?
+4. **Cancellation:** MVP đang out-of-scope policy phức tạp, nhưng có cần basic cancellation không?
+5. **Pricing:** công thức tính cước chính xác.
+6. **Payment:** retry tối đa bao nhiêu lần và trạng thái cuối nếu thất bại.
+7. **Tracking:** tần suất cập nhật location và mức độ realtime.
+8. **Notification:** MVP chọn Push hay SMS.
+9. **Data retention:** thời gian lưu trip, payment và audit log.
+10. **Admin override:** Operation được phép thay đổi những trạng thái nào và cần approval hay không.
+
+**Khuyến nghị:** phần FR trên nên được xem là **baseline v1**, chưa nên đánh số lại/xóa các FR khi Business chưa trả lời các open points. Sau khi chốt, chúng ta có thể chuyển tiếp sang **Use Case Specification + User Story + Acceptance Criteria**, đồng thời tạo **FR → Use Case traceability matrix** để hoàn thiện SRS.
