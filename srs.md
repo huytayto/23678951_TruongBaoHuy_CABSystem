@@ -187,7 +187,7 @@
 | BR-13 | Kiến trúc hệ thống phải cho phép bổ sung provider mới (thanh toán, thông báo, bản đồ) trong tương lai mà không cần xây dựng lại toàn bộ hệ thống | BG6 | Architecture |
 
 ## Bước 6 - Business Process
-
+```mermaid
 flowchart TD
     %% =========================
     %% CUSTOMER
@@ -368,7 +368,7 @@ flowchart TD
     class P1,N1,M1 external
     class O1,O2 operation
 
-
+```
 
 
 
