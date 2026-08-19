@@ -186,8 +186,187 @@
 | BR-12 | Kiến trúc hệ thống phải cho phép các thành phần (booking, payment, notification) hoạt động và mở rộng độc lập, lỗi một thành phần không được làm gián đoạn toàn hệ thống | BG5 | Architecture |
 | BR-13 | Kiến trúc hệ thống phải cho phép bổ sung provider mới (thanh toán, thông báo, bản đồ) trong tương lai mà không cần xây dựng lại toàn bộ hệ thống | BG6 | Architecture |
 
+## Bước 6 - Business Process
 
+flowchart TD
+    %% =========================
+    %% CUSTOMER
+    %% =========================
+    subgraph CUSTOMER["Customer"]
+        C1([Bắt đầu])
+        C2[Đăng nhập / Xác thực]
+        C3[Nhập điểm đón và điểm đến]
+        C4[Chọn loại xe]
+        C5[Gửi yêu cầu đặt xe]
+        C6[Theo dõi trạng thái chuyến]
+        C7[Nhận thông báo]
+        C8[Thanh toán]
+        C9[Đánh giá tài xế]
+        C10([Kết thúc])
+    end
 
+    %% =========================
+    %% CAB PLATFORM
+    %% =========================
+    subgraph CAB["CAB Platform"]
+        B1[Tiếp nhận booking]
+        B2[Tạo chuyến xe]
+        B3[Tìm tài xế phù hợp]
+        B4{Có tài xế phù hợp?}
+        B5[Gửi yêu cầu nhận chuyến]
+        B6{Driver phản hồi?}
+        B7[Timeout / Từ chối]
+        B8[Reassign tài xế khác]
+        B9[Xác nhận tài xế]
+        B10[Cập nhật trạng thái chuyến]
+        B11[Tính cước]
+        B12{Thanh toán thành công?}
+        B13[Ghi nhận thanh toán]
+        B14[Ghi nhận thanh toán thất bại]
+        B15[Cho phép retry]
+        B16[Cập nhật hoàn thành chuyến]
+    end
+
+    %% =========================
+    %% DRIVER
+    %% =========================
+    subgraph DRIVER["Driver"]
+        D1[Nhận thông báo chuyến]
+        D2{Chấp nhận?}
+        D3[Di chuyển đến điểm đón]
+        D4[Đã đến điểm đón]
+        D5[Đón khách]
+        D6[Đang thực hiện chuyến]
+        D7[Hoàn thành chuyến]
+    end
+
+    %% =========================
+    %% EXTERNAL PROVIDERS
+    %% =========================
+    subgraph EXTERNAL["External Providers"]
+        P1[Payment Provider]
+        N1[Notification Provider]
+        M1[Map / Location Provider]
+    end
+
+    %% =========================
+    %% OPERATION
+    %% =========================
+    subgraph OPERATION["Operation / Admin"]
+        O1[Giám sát chuyến]
+        O2[Xử lý chuyến lỗi / Exception]
+    end
+
+    %% =========================
+    %% MAIN BOOKING FLOW
+    %% =========================
+    C1 --> C2
+    C2 --> C3
+    C3 --> C4
+    C4 --> C5
+    C5 --> B1
+    B1 --> B2
+
+    %% =========================
+    %% MATCHING
+    %% =========================
+    B2 --> B3
+    B3 --> M1
+    M1 --> B4
+
+    B4 -- "Không" --> N1
+    N1 --> C7
+    C7 --> C10
+
+    B4 -- "Có" --> B5
+    B5 --> N1
+    N1 --> D1
+
+    D1 --> D2
+
+    D2 -- "Từ chối" --> B7
+    D2 -- "Không phản hồi" --> B7
+    B7 --> B8
+    B8 --> B3
+
+    D2 -- "Chấp nhận" --> B9
+    B9 --> N1
+    N1 --> C7
+    C7 --> C6
+
+    %% =========================
+    %% TRIP EXECUTION
+    %% =========================
+    B9 --> D3
+    D3 --> D4
+    D4 --> N1
+    N1 --> C7
+
+    D4 --> D5
+    D5 --> B10
+    B10 --> D6
+    D6 --> C6
+
+    D6 --> D7
+    D7 --> B16
+
+    %% =========================
+    %% PRICING
+    %% =========================
+    B16 --> B11
+    B11 --> C8
+
+    %% =========================
+    %% PAYMENT
+    %% =========================
+    C8 --> P1
+    P1 --> B12
+
+    B12 -- "Có" --> B13
+    B13 --> B16
+
+    B12 -- "Không" --> B14
+    B14 --> N1
+    N1 --> C7
+    C7 --> B15
+
+    B15 -- "Retry" --> P1
+    B15 -- "Không retry" --> B16
+
+    %% =========================
+    %% COMPLETION
+    %% =========================
+    B16 --> N1
+    N1 --> C7
+    C7 --> C9
+    C9 --> C10
+
+    %% =========================
+    %% OPERATION MONITORING
+    %% =========================
+    O1 -. "Giám sát" .-> B2
+    O1 -. "Giám sát" .-> B3
+    O1 -. "Giám sát" .-> B10
+    O1 -. "Giám sát" .-> B16
+    O1 --> O2
+    O2 -. "Xử lý exception" .-> B10
+
+    %% =========================
+    %% STYLING
+    %% =========================
+    classDef customer fill:#E3F2FD,stroke:#1976D2,color:#0D47A1
+    classDef cab fill:#E8F5E9,stroke:#388E3C,color:#1B5E20
+    classDef driver fill:#FFF3E0,stroke:#F57C00,color:#E65100
+    classDef external fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C
+    classDef operation fill:#FFFDE7,stroke:#FBC02D,color:#5F4600
+    classDef startend fill:#ECEFF1,stroke:#455A64,color:#263238
+
+    class C1,C10 startend
+    class C2,C3,C4,C5,C6,C7,C8,C9 customer
+    class B1,B2,B3,B4,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16 cab
+    class D1,D2,D3,D4,D5,D6,D7 driver
+    class P1,N1,M1 external
+    class O1,O2 operation
 
 
 
