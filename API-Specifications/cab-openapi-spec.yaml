@@ -1,0 +1,501 @@
+openapi: 3.0.3
+info:
+  title: CAB Platform API
+  version: 3.0.0
+  description: >
+    Public REST API exposed exclusively by the API Gateway. Gateway-to-service
+    communication uses gRPC; domain events are delivered asynchronously through Kafka.
+    Text values in JSON responses are HTML-escaped to reduce reflected and stored XSS risk.
+servers:
+  - url: http://localhost:8080
+    description: Local Docker Compose deployment
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Customers
+  - name: Drivers
+  - name: Bookings
+  - name: Trips
+  - name: Payments
+  - name: Notifications
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Gateway liveness check
+      responses:
+        '200':
+          description: Gateway process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: healthy}
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness check for services and infrastructure
+      responses:
+        '200':
+          description: All dependencies are ready
+        '503':
+          description: One or more dependencies are unavailable
+  /health/services:
+    get:
+      tags: [Health]
+      summary: Health of all microservices and infrastructure dependencies
+      responses:
+        '200':
+          description: All services are healthy
+        '503':
+          description: At least one service or dependency is degraded
+  /api/v1/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a customer or driver account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string, maxLength: 100, example: "0901234567"}
+                password: {type: string, minLength: 8, maxLength: 128, format: password, example: "Password@123"}
+                role: {type: string, enum: [CUSTOMER, DRIVER], default: CUSTOMER}
+                fullname: {type: string, maxLength: 200}
+      responses:
+        '201': {description: Account created; CUSTOMER registrations also create a profile}
+        '400': {description: Input validation failed}
+        '409': {description: Username already exists}
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate and issue a signed JWT access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string}
+                password: {type: string, format: password}
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: {type: boolean, example: true}
+                  token: {type: string}
+                  uid: {type: string, format: uuid}
+                  role: {type: string, enum: [CUSTOMER, DRIVER, ADMIN]}
+                  token_type: {type: string, example: Bearer}
+                  expires_in: {type: integer, example: 3600}
+        '401': {description: Invalid credentials}
+        '403': {description: Account is not active}
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke the current access token until it expires
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Token revoked}
+        '401': {description: Missing, invalid, expired, or revoked token}
+  /api/v1/customers/me:
+    get:
+      tags: [Customers]
+      summary: Get the authenticated customer's profile
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Customer profile}
+        '401': {description: Unauthorized}
+        '404': {description: Profile not found}
+  /api/v1/customers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Customers]
+      summary: Get a customer profile by ID (self or ADMIN)
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Customer profile}
+        '403': {description: A customer may only read their own profile}
+        '404': {description: Customer not found}
+    put:
+      tags: [Customers]
+      summary: Update a customer profile (ADMIN only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullname: {type: string}
+                age: {type: integer, minimum: 0, maximum: 120}
+                address: {type: string}
+      responses:
+        '200': {description: Profile updated}
+        '403': {description: ADMIN role required}
+    delete:
+      tags: [Customers]
+      summary: Delete a customer profile (ADMIN only)
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Profile deleted}
+        '403': {description: ADMIN role required}
+  /api/v1/customers:
+    get:
+      tags: [Customers]
+      summary: List customer profiles (ADMIN only)
+      security: [{BearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+      responses:
+        '200': {description: Paginated customer profiles}
+        '403': {description: ADMIN role required}
+    post:
+      tags: [Customers]
+      summary: Create a customer profile (ADMIN only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid, fullname]
+              properties:
+                uid: {type: string, format: uuid}
+                fullname: {type: string}
+                age: {type: integer, minimum: 0, maximum: 120}
+                address: {type: string}
+      responses:
+        '201': {description: Profile created}
+        '403': {description: ADMIN role required}
+  /api/v1/drivers/register:
+    post:
+      tags: [Drivers]
+      summary: Submit a driver and vehicle profile for approval (DRIVER only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [license_number, plate_number]
+              properties:
+                license_number: {type: string}
+                plate_number: {type: string}
+                vehicle_type: {type: string, enum: [CAB_4_SEAT], default: CAB_4_SEAT}
+      responses:
+        '201': {description: Driver profile created in PENDING_APPROVAL state}
+        '403': {description: DRIVER role required}
+        '409': {description: License, plate, or driver profile already registered}
+  /api/v1/admin/drivers/{id}/approve:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Drivers]
+      summary: Approve or reject a pending driver (ADMIN only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                approve: {type: boolean, default: true}
+      responses:
+        '200': {description: Driver review saved}
+        '403': {description: ADMIN role required}
+        '404': {description: Pending driver not found}
+  /api/v1/drivers/availability:
+    patch:
+      tags: [Drivers]
+      summary: Set driver online or offline
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [online]
+              properties:
+                online: {type: boolean}
+                latitude: {type: number, minimum: -90, maximum: 90}
+                longitude: {type: number, minimum: -180, maximum: 180}
+      responses:
+        '200': {description: Availability updated}
+        '403': {description: DRIVER role or active approved profile required}
+  /api/v1/drivers/nearby:
+    get:
+      tags: [Drivers]
+      summary: Search available approved drivers near a coordinate
+      description: Administrative/test endpoint. Customer booking discovery calls Driver Service internally.
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: {type: number, minimum: -90, maximum: 90, example: 10.776889}
+        - name: lng
+          in: query
+          required: true
+          schema: {type: number, minimum: -180, maximum: 180, example: 106.700806}
+        - name: radius
+          in: query
+          schema: {oneOf: [{type: integer, minimum: 1, maximum: 50000}, {type: string, enum: ["1km"]}], default: 1000}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+      responses:
+        '200': {description: Nearby available drivers, ordered by distance}
+        '400': {description: Invalid coordinates or pagination}
+  /api/v1/drivers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Drivers]
+      summary: Get a driver profile by ID (own profile or ADMIN)
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Driver profile}
+        '404': {description: Driver not found}
+  /api/v1/bookings:
+    post:
+      tags: [Bookings]
+      summary: Create a booking and start sequential nearby-driver dispatch
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pickup_lat, pickup_lng, dropoff_lat, dropoff_lng]
+              properties:
+                pickup_lat: {type: number, example: 10.776889}
+                pickup_lng: {type: number, example: 106.700806}
+                dropoff_lat: {type: number, example: 10.7725}
+                dropoff_lng: {type: number, example: 106.698}
+                vehicle_type: {type: string, enum: [CAB_4_SEAT], default: CAB_4_SEAT}
+      responses:
+        '201': {description: Booking created; offers are sent sequentially to nearby drivers}
+        '400': {description: Invalid booking input}
+        '429': {description: Rate limit exceeded}
+    get:
+      tags: [Bookings]
+      summary: List bookings for the authenticated customer
+      security: [{BearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+      responses:
+        '200': {description: Paginated customer bookings}
+  /api/v1/bookings/{id}/accept:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Bookings]
+      summary: Accept the current booking offer (DRIVER only)
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Trip assigned}
+        '403': {description: DRIVER role or assigned offer required}
+        '409': {description: Offer expired, already accepted, or another driver won the lock}
+  /api/v1/bookings/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Bookings]
+      summary: Cancel a booking while searching for a driver
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, maxLength: 500}
+      responses:
+        '200': {description: Booking canceled}
+        '409': {description: Booking cannot be canceled}
+  /api/v1/trips/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Trips]
+      summary: Advance trip to its next valid state (assigned DRIVER only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [EN_ROUTE, ARRIVED, PICKED_UP, IN_PROGRESS, COMPLETED]
+      responses:
+        '200': {description: Trip status advanced}
+        '400': {description: Invalid state transition}
+        '403': {description: Only the assigned driver may update the trip}
+  /api/v1/trips/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Trips]
+      summary: Get trip and assigned driver details (trip participants or ADMIN)
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Trip and driver profile}
+        '403': {description: Caller is not a trip participant}
+        '404': {description: Trip not found}
+  /api/v1/trips/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Trips]
+      summary: Cancel a non-terminal trip with a reason (customer only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, maxLength: 500}
+      responses:
+        '200': {description: Trip canceled and driver released}
+        '400': {description: Cancellation reason required}
+        '409': {description: Trip cannot be canceled}
+  /api/v1/trips/{id}/rating:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Trips]
+      summary: Rate a completed trip once (customer only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stars]
+              properties:
+                stars: {type: integer, minimum: 1, maximum: 5}
+                comment: {type: string, maxLength: 2000}
+      responses:
+        '201': {description: Rating saved}
+        '400': {description: Invalid rating or trip not completed}
+        '409': {description: Trip has already been rated}
+  /api/v1/payments/online:
+    post:
+      tags: [Payments]
+      summary: Create an online payment attempt with idempotency protection
+      description: >
+        Reusing an Idempotency-Key for the same authenticated customer and trip
+        returns the exact original response snapshot. The unique database key
+        prevents a replay from creating a second payment transaction. The payment
+        amount is read from the completed trip, not accepted from the client.
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trip_id]
+              properties:
+                trip_id: {type: string, format: uuid}
+      responses:
+        '200': {description: New payment attempt or exact response saved for the original request}
+        '409': {description: Idempotency-Key was already used for a different payment}
+        '400': {description: Missing trip or idempotency key}
+  /api/v1/payments/cash-confirm:
+    post:
+      tags: [Payments]
+      summary: Confirm cash received for a completed trip (assigned DRIVER only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trip_id]
+              properties:
+                trip_id: {type: string, format: uuid}
+                amount: {type: number, minimum: 0}
+      responses:
+        '200': {description: Cash payment completed}
+        '403': {description: Only assigned driver can confirm payment}
+  /api/v1/payments/webhook:
+    post:
+      tags: [Payments]
+      summary: Process signed payment provider callback
+      description: Signature is HMAC-SHA256 of the UTF-8 string order_id:status using PAYMENT_WEBHOOK_SECRET.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_id, status, signature]
+              properties:
+                order_id: {type: string, format: uuid, description: Payment ID}
+                status: {type: string, enum: [SUCCESS, FAILED]}
+                signature: {type: string, description: Lowercase hexadecimal HMAC-SHA256}
+      responses:
+        '200': {description: Payment state updated}
+        '401': {description: Invalid callback signature}
+        '404': {description: Pending payment not found}
+  /api/v1/notifications/logs:
+    get:
+      tags: [Notifications]
+      summary: List Kafka events consumed by the notification service (ADMIN only)
+      security: [{BearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+      responses:
+        '200': {description: Notification event log}
+        '403': {description: ADMIN role required}
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}

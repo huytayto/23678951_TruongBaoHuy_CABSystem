@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info:
+  title: CAB Customer Service API
+  version: 3.0.0
+  description: Customer Profile Management with RBAC (Member view / Admin write).
+paths:
+  /api/v1/customers/me:
+    get:
+      summary: Get current authenticated customer profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved
+        '401':
+          description: Unauthorized
+  /api/v1/customers/{id}:
+    get:
+      summary: Get customer profile by ID (Member / Admin)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Customer details
+        '403':
+          description: Forbidden
+    delete:
+      summary: Delete customer profile (Admin only)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Customer deleted
+        '403':
+          description: Forbidden (Non-admin)

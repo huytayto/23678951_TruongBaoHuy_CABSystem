@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+**/node_modules
+API-Specifications
+DDD-Design-Document
+SRS-Document
+Test-Cases
+tests
+scripts
+README.md
+*.pdf

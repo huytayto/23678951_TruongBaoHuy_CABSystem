@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: CAB Ride & Trip Execution Service API
+  version: 3.0.0
+  description: 5-step Trip Status Execution, Fixed Fare Calculation, and 5-Star Rating.
+paths:
+  /api/v1/trips/{id}/status:
+    patch:
+      summary: Update trip status (5-step sequential transition)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [EN_ROUTE, ARRIVED, PICKED_UP, IN_PROGRESS, COMPLETED]
+      responses:
+        '200':
+          description: Status updated successfully
+        '400':
+          description: Invalid status transition jump
+  /api/v1/trips/{id}/rating:
+    post:
+      summary: Customer rate completed trip
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stars: {type: integer, minimum: 1, maximum: 5, example: 5}
+                comment: {type: string, example: "Friendly driver, smooth ride"}
+      responses:
+        '201':
+          description: Rating submitted successfully
+        '400':
+          description: Trip already rated or invalid

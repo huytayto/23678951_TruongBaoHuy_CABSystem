@@ -1,0 +1,278 @@
+x-domain-healthcheck: &domain-healthcheck
+  test: ["CMD", "node", "services/grpc-healthcheck.js"]
+  interval: 10s
+  timeout: 4s
+  retries: 10
+  start_period: 30s
+
+x-restart-policy: &restart-policy unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: *restart-policy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [cab]
+
+  redis:
+    image: redis:7-alpine
+    restart: *restart-policy
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [cab]
+
+  kafka:
+    image: apache/kafka:3.8.0
+    restart: *restart-policy
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    networks: [cab]
+
+  auth-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: auth
+      GRPC_PORT: 50051
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_auth
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+      CUSTOMER_SERVICE_ADDRESS: customer-service:50052
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  customer-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: customer
+      GRPC_PORT: 50052
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_customer
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      CUSTOMER_DATA_ENCRYPTION_KEY: ${CUSTOMER_DATA_ENCRYPTION_KEY:?Generate a customer encryption key}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  driver-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: driver
+      GRPC_PORT: 50053
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_driver
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DRIVER_DATA_ENCRYPTION_KEY: ${DRIVER_DATA_ENCRYPTION_KEY:?Generate a driver encryption key}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  booking-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: booking
+      GRPC_PORT: 50054
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_booking
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      DRIVER_SERVICE_ADDRESS: driver-service:50053
+      TRIP_SERVICE_ADDRESS: trip-service:50055
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  trip-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: trip
+      GRPC_PORT: 50055
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_trip
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      DRIVER_SERVICE_ADDRESS: driver-service:50053
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  notification-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: notification
+      GRPC_PORT: 50056
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_notification
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  payment-service:
+    build: .
+    restart: *restart-policy
+    command: ["node", "services/domain-service.js"]
+    environment:
+      SERVICE_CONTEXT: payment
+      GRPC_PORT: 50057
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: cab_payment
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?Set PAYMENT_WEBHOOK_SECRET in .env}
+      TRIP_SERVICE_ADDRESS: trip-service:50055
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+    healthcheck: *domain-healthcheck
+    networks: [cab]
+
+  api-gateway:
+    build: .
+    restart: *restart-policy
+    command: ["node", "api-gateway/src/server.js"]
+    environment:
+      PORT: 8080
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1000}
+      AUTH_SERVICE_ADDRESS: auth-service:50051
+      CUSTOMER_SERVICE_ADDRESS: customer-service:50052
+      DRIVER_SERVICE_ADDRESS: driver-service:50053
+      BOOKING_SERVICE_ADDRESS: booking-service:50054
+      TRIP_SERVICE_ADDRESS: trip-service:50055
+      NOTIFICATION_SERVICE_ADDRESS: notification-service:50056
+      PAYMENT_SERVICE_ADDRESS: payment-service:50057
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      auth-service: {condition: service_healthy}
+      customer-service: {condition: service_healthy}
+      driver-service: {condition: service_healthy}
+      booking-service: {condition: service_healthy}
+      trip-service: {condition: service_healthy}
+      notification-service: {condition: service_healthy}
+      payment-service: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/ready').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks: [cab]
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+
+networks:
+  cab:
+    driver: bridge

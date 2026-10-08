@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: CAB Auth Service API (Identity & Access)
+  version: 3.0.0
+  description: Authentication and Token Management Service with Bcrypt password hashing and JWT issuance.
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Register a new user (Customer or Driver)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username: {type: string, example: "0901234567"}
+                password: {type: string, example: "Password@123"}
+                role: {type: string, enum: [CUSTOMER, DRIVER], example: "CUSTOMER"}
+      responses:
+        '201':
+          description: User registered successfully
+        '400':
+          description: Validation error or SQLi detected
+        '409':
+          description: Username already exists
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate user and issue JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: {type: string, example: "0901234567"}
+                password: {type: string, example: "Password@123"}
+      responses:
+        '200':
+          description: Authentication successful, JWT issued
+        '401':
+          description: Invalid credentials
+  /api/v1/auth/logout:
+    post:
+      summary: Invalidate user session / token
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully

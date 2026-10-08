@@ -1,0 +1,49 @@
+openapi: 3.0.3
+info:
+  title: CAB Payment & Settlement Service API
+  version: 3.0.0
+  description: Online Webhook Callback (Prepaid), Cash Confirmation (Postpaid), and Idempotency Check.
+paths:
+  /api/v1/payments/webhook:
+    post:
+      summary: Cổng thanh toán Online Webhook Callback (Prepaid)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order_id: {type: string, example: "ord-001"}
+                status: {type: string, example: "SUCCESS"}
+                signature: {type: string, example: "valid_hmac_sha256"}
+      responses:
+        '200':
+          description: Webhook processed and payment completed
+  /api/v1/payments/cash-confirm:
+    post:
+      summary: Driver confirm cash payment received (Postpaid)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trip_id: {type: string, example: "trip-001"}
+                amount: {type: number, example: 50000}
+      responses:
+        '200':
+          description: Cash payment confirmed
+  /api/v1/payments/online:
+    post:
+      summary: Submit online payment with Idempotency Key protection
+      headers:
+        Idempotency-Key:
+          schema: {type: string}
+          required: true
+      responses:
+        '200':
+          description: Payment processed without duplicate deduction

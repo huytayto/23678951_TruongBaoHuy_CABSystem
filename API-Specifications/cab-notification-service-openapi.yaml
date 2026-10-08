@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: CAB Notification Service API
+  version: 3.0.0
+  description: Asynchronous Kafka Event Consumer for Push/SMS Notification Logging.
+paths:
+  /api/v1/notifications/logs:
+    get:
+      summary: Get notification dispatch logs (Admin / Internal)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of consumed notification events

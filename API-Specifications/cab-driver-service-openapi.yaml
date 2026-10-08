@@ -1,0 +1,64 @@
+openapi: 3.0.3
+info:
+  title: CAB Driver Service API
+  version: 3.0.0
+  description: Driver Onboarding, Admin Approval, Availability Toggle, and 1km Nearby Search.
+paths:
+  /api/v1/drivers/register:
+    post:
+      summary: Driver onboarding registration (CAB_4_SEAT)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                license_number: {type: string, example: "79A-12345"}
+                plate_number: {type: string, example: "51H-999.99"}
+                vehicle_type: {type: string, example: "CAB_4_SEAT"}
+      responses:
+        '201':
+          description: Registered in PENDING_APPROVAL status
+  /api/v1/admin/drivers/{id}/approve:
+    patch:
+      summary: Admin approve driver profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Driver approved and activated
+        '403':
+          description: Forbidden (Admin only)
+  /api/v1/drivers/availability:
+    patch:
+      summary: Toggle driver availability (ONLINE/OFFLINE)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Availability updated
+  /api/v1/drivers/nearby:
+    get:
+      summary: Search nearby drivers within 1km radius (Smoke Test)
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema: {type: number, example: 10.776889}
+        - name: lng
+          in: query
+          required: true
+          schema: {type: number, example: 106.700806}
+        - name: radius
+          in: query
+          schema: {type: string, example: "1km"}
+        - name: limit
+          in: query
+          schema: {type: integer, example: 5}
+        - name: page
+          in: query
+          schema: {type: integer, example: 1}
+      responses:
+        '200':
+          description: List of nearby drivers with pagination

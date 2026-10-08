@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: CAB API Gateway & Health Service API
+  version: 3.0.0
+  description: >
+    Single Point of Entry API Gateway with rate limiting (429), centralized JWT
+    authentication (401), RBAC (403), and health checks. The complete public API
+    contract is in cab-openapi-spec.yaml.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Gateway liveness check
+      responses:
+        '200':
+          description: Gateway process is alive
+  /ready:
+    get:
+      summary: Readiness check for microservices and infrastructure
+      responses:
+        '200':
+          description: All dependencies are ready
+        '503':
+          description: One or more dependencies are unavailable
+  /health/services:
+    get:
+      summary: Check health status of all eight services and infrastructure
+      responses:
+        '200':
+          description: All services healthy
+        '503':
+          description: At least one service or dependency is degraded
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UP, DEGRADED]
+        services:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [UP, DOWN]

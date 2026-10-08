@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: CAB Booking Service API
+  version: 3.0.0
+  description: Booking Creation, Sequential Dispatch Matching, and Cancellation.
+paths:
+  /api/v1/bookings:
+    post:
+      summary: Create a new ride booking
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pickup_lat: {type: number, example: 10.776889}
+                pickup_lng: {type: number, example: 106.700806}
+                dropoff_lat: {type: number, example: 10.7725}
+                dropoff_lng: {type: number, example: 106.698}
+                vehicle_type: {type: string, example: "CAB_4_SEAT"}
+      responses:
+        '201':
+          description: Booking created, searching for driver
+        '429':
+          description: Rate limit exceeded
+  /api/v1/bookings/{id}/accept:
+    post:
+      summary: Driver accept booking offer (Mutex Lock protected)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Trip assigned successfully
+        '409':
+          description: Trip already accepted by another driver
+  /api/v1/bookings/{id}/cancel:
+    post:
+      summary: Cancel booking with reason
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, example: "Changed travel plan"}
+      responses:
+        '200':
+          description: Booking canceled successfully
