@@ -1,0 +1,269 @@
+@startuml
+title Luong nghiep vu chinh: Khach hang dat xe, ghep tai xe va hoan thanh chuyen
+
+autonumber "<b>0</b>"
+skinparam shadowing false
+skinparam maxMessageSize 220
+skinparam sequenceMessageAlign left
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam sequence {
+  ArrowColor #1F2937
+  LifeLineBorderColor #6B7280
+  LifeLineBackgroundColor #FFFFFF
+}
+
+actor "Khach hang\n(Customer App)" as C #DCEBFA
+participant "API Gateway\n(REST, JWT, RBAC)" as GW #E9D5FF
+participant "Auth Service" as AU #DBEAFE
+participant "Booking Service" as BS #FECACA
+participant "Driver Service" as DS #DCFCE7
+participant "Tai xe\n(Driver App)" as D #FEF3C7
+participant "Trip Service" as TS #EDE9FE
+participant "Payment Service" as PS #FDE68A
+queue "Kafka\n(Message Broker)" as K #F3E8FF
+participant "Notification Service" as NS #EDE9FE
+
+database "PostgreSQL\n(cab_auth)" as AUDB #FFFFFF
+database "PostgreSQL\n(cab_booking)" as BDB #FFFFFF
+database "PostgreSQL\n(cab_driver)" as DDB #FFFFFF
+database "PostgreSQL\n(cab_trip)" as TDB #FFFFFF
+database "PostgreSQL\n(cab_payment)" as PDB #FFFFFF
+database "PostgreSQL\n(cab_notification)" as NDB #FFFFFF
+collections "Redis\n(Geo, TTL, locks, rate limit)" as R #FEE2E2
+
+note over C,D
+Tien dieu kien:
+- Khach hang da dang ky tai khoan CUSTOMER.
+- Tai xe da duoc ADMIN duyet (ACTIVE) va dang AVAILABLE.
+- Tai xe cap nhat vi tri khi bat trang thai san sang.
+end note
+
+== Dang nhap (thuc hien truoc khi dat xe) ==
+
+C -> GW : POST /api/v1/auth/login\n{username, password}
+activate GW
+GW -> AU : gRPC Invoke(login)
+activate AU
+AU -> AUDB : Tim user theo username
+AUDB --> AU : User + password_hash + role
+AU -> AU : bcrypt.compare(password, password_hash)
+AU --> GW : 200 {JWT, uid, role, expires_in}
+deactivate AU
+GW --> C : 200 {token}
+deactivate GW
+
+== Tao booking va tim tai xe ==
+
+C -> GW : POST /api/v1/bookings\nAuthorization: Bearer JWT\n{pickup, dropoff, vehicle_type}
+activate GW
+GW -> GW : Kiem JWT HS256, issuer, expiry\nva role = CUSTOMER
+GW -> R : Kiem tra token revoke + rate limit
+R --> GW : Chua revoke; request duoc phep
+GW -> BS : gRPC Invoke(create)\ncustomer_id lay tu JWT
+activate BS
+
+BS -> DS : gRPC Invoke(nearby)\nvi tri don, ban kinh 1 km
+activate DS
+DS -> R : GEOSEARCH drivers AVAILABLE\nsap xep theo khoang cach
+R --> DS : Danh sach uid theo khoang cach
+DS -> DDB : Kiem tra approval_status = ACTIVE\nva availability = AVAILABLE
+DDB --> DS : Danh sach tai xe hop le
+DS --> BS : Candidates gan nhat truoc
+deactivate DS
+
+alt Co tai xe phu hop
+  BS -> BDB : INSERT Booking\nstatus = SEARCHING_DRIVER\nluu candidate_driver_uids va tai xe dau tien
+  BDB --> BS : Booking da luu
+  BS -> R : SET offer-exp:{booking_id}\nTTL = 15 giay, driver_uid
+  R --> BS : Offer co hieu luc
+  BS ->> K : cab.booking.events\nBookingCreated + DriverOfferCreated
+else Khong co tai xe trong ban kinh 1 km
+  BS -> BDB : INSERT Booking\nstatus = NO_DRIVERS_AVAILABLE
+  BDB --> BS : Booking da luu
+  BS ->> K : cab.booking.events\nBookingCreated (khong co offer)
+end
+
+GW <-- BS : 201 Created\nbooking_id, status, offered_driver_uid
+deactivate BS
+GW --> C : 201 Created\nThong tin booking ban dau
+deactivate GW
+
+== Xu ly offer va tai xe chap nhan ==
+
+K ->> NS : Consume BookingCreated / DriverOfferCreated
+activate NS
+NS -> NDB : Ghi notification log\n(event_id duy nhat)
+NDB --> NS : Da ghi log
+deactivate NS
+
+note over D,NS #F3E8FF
+Backend tao offer va Kafka event, nhung Notification Service hien chi ghi log.
+Push/SMS/realtime delivery den ung dung tai xe chua duoc cai dat.
+Tai xe chap nhan offer hien tai qua API khi biet booking_id.
+end note
+
+opt Booking dang SEARCHING_DRIVER
+  loop Tung tai xe theo thu tu gan nhat; toi khi chap nhan, huy hoac het candidates
+    alt Tai xe chap nhan trong 15 giay
+      D -> GW : POST /api/v1/bookings/{id}/accept\nAuthorization: Bearer JWT
+      activate GW
+      GW -> GW : Kiem JWT va role = DRIVER
+      GW -> BS : gRPC Invoke(accept)\nbooking_id, driver_id tu JWT
+      activate BS
+      BS -> R : Lay Redis mutex booking + driver
+      R --> BS : Da lock hoac lock dang bi giu
+      alt Lock thanh cong; offer van thuoc tai xe nay
+        BS -> BDB : SELECT booking FOR UPDATE\nkiem tra SEARCHING_DRIVER
+        BDB --> BS : Booking va assigned offer
+        BS -> R : Kiem offer-exp:{booking_id}\ncon han va driver_uid khop
+        R --> BS : Offer hop le
+        BS -> DS : gRPC Invoke(set_busy)
+        activate DS
+        DS -> DDB : AVAILABLE -> BUSY
+        DDB --> DS : Tai xe da duoc giu cho chuyen
+        DS -> R : Xoa tai xe khoi Redis Geo available
+        DS --> BS : Cap nhat trang thai tai xe thanh cong
+        deactivate DS
+        BS -> R : Xoa offer TTL
+        BS -> TS : gRPC Invoke(create_from_booking)\nbooking_id, customer_id, driver_id, fare
+        activate TS
+        TS -> TDB : INSERT Trip\nstatus = DRIVER_ASSIGNED
+        TDB --> TS : Trip da tao
+        TS --> BS : Trip details
+        deactivate TS
+        BS -> BDB : UPDATE Booking\nstatus = DRIVER_ASSIGNED\nassigned_driver_uid = driver_id
+        BDB --> BS : Booking da gan tai xe
+        BS ->> K : cab.trip.events\nDriverAssigned
+        BS --> GW : 200 OK {booking_id, trip}
+        deactivate BS
+        GW --> D : 200 OK {trip}
+        deactivate GW
+        K ->> NS : Consume DriverAssigned
+        activate NS
+        NS -> NDB : Ghi event log
+        NDB --> NS : Da ghi log
+        deactivate NS
+        break Da ghep thanh cong; tiep tuc thuc hien chuyen
+      else Offer het han, sai tai xe hoac co tranh chap lock
+        BS --> GW : 409 Conflict
+        deactivate BS
+        GW --> D : 409 Conflict
+        deactivate GW
+      end
+    else Khach hang huy booking khi dang tim tai xe
+      C -> GW : POST /api/v1/bookings/{id}/cancel\n{reason}
+      activate GW
+      GW -> GW : Kiem JWT va role = CUSTOMER
+      GW -> BS : gRPC Invoke(cancel)\ncustomer_id lay tu JWT
+      activate BS
+      BS -> BDB : UPDATE status = CANCELED\nchi khi dang SEARCHING_DRIVER
+      BDB --> BS : Booking da huy
+      BS ->> K : cab.booking.events\nBookingCanceled
+      BS --> GW : 200 OK {booking}
+      deactivate BS
+      GW --> C : 200 OK {booking}
+      deactivate GW
+      break Booking da huy; dung dispatch
+    else Khong co tai xe chap nhan truoc khi offer het han
+      ... Offer Redis het han sau 15 giay ...
+      BS -> R : Dispatcher kiem tra offer expiry\n(chay dinh ky moi 3 giay)
+      R --> BS : Offer het han
+      BS -> BDB : Lay candidate tiep theo
+      BDB --> BS : Tai xe tiep theo hoac het danh sach
+      alt Con tai xe tiep theo
+        BS -> BDB : Cap nhat offered_driver_uid, offered_index
+        BS -> R : Tao offer TTL moi 15 giay
+        BS ->> K : cab.booking.events\nDriverOfferCreated cho tai xe tiep theo
+      else Het danh sach tai xe
+        BS -> BDB : UPDATE status = NO_DRIVERS_AVAILABLE\nxoa offered_driver_uid
+        BDB --> BS : Booking khong tim thay tai xe
+      end
+    end
+  end
+end
+
+== Tai xe thuc hien chuyen ==
+
+note over C,TS
+Trip bat dau tai DRIVER_ASSIGNED.
+Moi lan cap nhat trang thai deu di qua Gateway va Trip Service.
+Tai xe phai cap nhat dung thu tu; khong duoc nhay coc trang thai.
+end note
+
+loop Tien trinh chuyen di
+  D -> GW : PATCH /api/v1/trips/{trip_id}/status\nEN_ROUTE / ARRIVED / PICKED_UP /\nIN_PROGRESS / COMPLETED
+  activate GW
+  GW -> GW : Kiem JWT va role = DRIVER
+  GW -> TS : gRPC Invoke(update_status)\ntrip_id, driver_id tu JWT, status
+  activate TS
+  TS -> TDB : Doc trip va trang thai hien tai
+  TDB --> TS : Trip
+  TS -> TS : Kiem tai xe duoc gan\nva state transition hop le
+  TS -> TDB : UPDATE trang thai trip
+  TDB --> TS : Trang thai moi
+  alt Chua COMPLETED
+    TS ->> K : cab.trip.events\nTripStatusUpdated
+  else Chuyen COMPLETED
+    TS -> DS : gRPC Invoke(set_busy=false)
+    activate DS
+    DS -> DDB : BUSY -> AVAILABLE
+    DS -> R : Dua tai xe tro lai Redis Geo
+    DS --> TS : Tai xe san sang nhan chuyen
+    deactivate DS
+    TS ->> K : cab.trip.events\nTripCompleted
+  end
+  TS --> GW : 200 OK {trip, status, fare_amount}
+  deactivate TS
+  GW --> D : 200 OK
+  deactivate GW
+end
+
+K ->> NS : Consume TripStatusUpdated / TripCompleted
+activate NS
+NS -> NDB : Ghi notification event log
+NDB --> NS : Da ghi log
+deactivate NS
+
+== Thanh toan online (tuy chon sau khi chuyen hoan tat) ==
+
+opt Khach hang chon thanh toan online
+  C -> GW : POST /api/v1/payments/online\nAuthorization: Bearer JWT\nIdempotency-Key: UUID\n{trip_id}
+  activate GW
+  GW -> GW : Kiem JWT va role = CUSTOMER
+  GW -> PS : gRPC Invoke(online)\ncustomer_id tu JWT + idempotency_key
+  activate PS
+  PS -> TS : gRPC Invoke(get trip)
+  TS -> TDB : Doc trip
+  TDB --> TS : customer_id, status, fare_amount
+  TS --> PS : Chi chap nhan trip COMPLETED\nva dung customer
+  PS -> PDB : INSERT Payment PENDING va response snapshot\ntrong transaction; unique Idempotency-Key
+  PDB --> PS : Payment hoac response da luu
+  PS --> GW : 200 OK {payment, PENDING}
+  deactivate PS
+  GW --> C : 200 OK {payment}
+  deactivate GW
+
+  opt Gui lai cung Idempotency-Key va cung trip
+    C -> GW : Gui lai request thanh toan y het
+    GW -> PS : gRPC Invoke(online)
+    PS -> PDB : Doc response snapshot theo Idempotency-Key
+    PDB --> PS : Response goc; khong tao payment moi
+    PS --> GW : Tra lai response goc
+    GW --> C : 200 OK; khong double charge
+  end
+end
+
+note over PS,PDB #FEF3C7
+Payment Service hien tao PENDING va co local signed-webhook endpoint.
+Chua ket noi payment provider that; so tien lay tu trip, khong lay tu client.
+end note
+
+note over C,NS #FEE2E2
+Gioi han hien tai:
+- Notification Service tieu thu Kafka va ghi log, chua gui push/SMS.
+- Backend chua co kenh realtime de gui trip_id/DriverAssigned ve Customer App.
+- Khach hang nhan 201 ngay sau khi tao booking; viec tai xe chap nhan la request rieng.
+end note
+
+@enduml
