@@ -1,0 +1,122 @@
+@startuml
+title CAB System - Microservices Architecture
+
+top to bottom direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 55
+skinparam ranksep 70
+skinparam padding 12
+skinparam ArrowThickness 1.4
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam packageStyle rectangle
+
+skinparam component {
+  RoundCorner 12
+  BorderColor #5488B8
+  FontColor #202020
+}
+skinparam database {
+  BorderColor #5488B8
+  FontColor #202020
+}
+skinparam package {
+  BorderColor #B7B7B7
+  FontColor #202020
+}
+
+rectangle "CAB CLIENTS\n\nCustomer App | Driver App | Admin" as CLIENT #D9ECFF
+
+component "API GATEWAY :8080\n\nREST / JSON entry point\nJWT Authentication & Authorization\nRate Limiting | Request Routing" as GW #F0DFFF
+
+CLIENT -down-> GW : REST / JSON
+
+package "CAB DOMAIN MICROSERVICES\nEach service runs independently over gRPC" as SERVICES {
+  together {
+    component "Auth Service\n\nRegister / Login / Logout\nJWT issuance" as AUTH #D9EEFF
+    component "Customer Service\n\nCustomer profiles\nSensitive-field encryption" as CUSTOMER #D7F9D9
+    component "Driver Service\n\nDriver profiles / approval\nAvailability / location" as DRIVER #FEF0C2
+    component "Booking Service\n\nRide requests\nDriver dispatch / offers" as BOOKING #FFDADA
+  }
+
+  together {
+    component "Trip Service\n\nTrip lifecycle\nCancellation / rating" as TRIP #EAD9FF
+    component "Payment Service\n\nOnline / cash payment\nWebhook / idempotency" as PAYMENT #FDE2C5
+    component "Notification Service\n\nKafka event consumer\nNotification event logs" as NOTIFICATION #DDEBFF
+  }
+
+  AUTH -[hidden]right-> CUSTOMER
+  CUSTOMER -[hidden]right-> DRIVER
+  DRIVER -[hidden]right-> BOOKING
+  AUTH -[hidden]down-> TRIP
+  TRIP -[hidden]right-> PAYMENT
+  PAYMENT -[hidden]right-> NOTIFICATION
+}
+
+GW -down-> SERVICES : gRPC :50051-50057\nGateway routes to service endpoints
+
+note right of SERVICES
+  Synchronous service-to-service gRPC:
+  - Auth -> Customer: create customer profile
+  - Booking -> Driver: nearby search / set busy
+  - Booking -> Trip: create trip
+  - Trip -> Driver: release driver
+  - Payment -> Trip: verify completed trip
+end note
+
+package "SHARED INFRASTRUCTURE" as INFRA {
+  database "Redis :6379\n\nRate-limit counters\nJWT revocation\nDriver GEO index\nBooking offer TTL / locks" as REDIS #FFE4E4
+
+  queue "Apache Kafka :9092\n\ncab.booking.events\ncab.driver.events\ncab.trip.events\ncab.payment.events" as KAFKA #F0DFFF
+
+  component "Kafka UI :8081\n(local operator UI)" as KAFKA_UI #E9E7FF
+
+  KAFKA_UI -[hidden]down-> KAFKA
+}
+
+GW -right-> REDIS : rate limiting\nrevocation checks
+SERVICES -down-> REDIS : Driver GEO\nBooking TTL / locks
+SERVICES -[#D71920,dashed]down-> KAFKA : publish events\nDriver / Booking / Trip / Payment
+KAFKA -[#D71920,dashed]right-> NOTIFICATION : consume events
+KAFKA_UI -left-> KAFKA : inspect topics
+
+package "DATA PERSISTENCE - PostgreSQL 16" as DATA {
+  database "cab_auth" as AUTH_DB #EAF3FF
+  database "cab_customer" as CUSTOMER_DB #E4FFE7
+  database "cab_driver" as DRIVER_DB #FFF5D9
+  database "cab_booking" as BOOKING_DB #FFE5E5
+  database "cab_trip" as TRIP_DB #F0DFFF
+  database "cab_payment" as PAYMENT_DB #FDEBD0
+  database "cab_notification" as NOTIFICATION_DB #E8F0FE
+
+  AUTH_DB -[hidden]right-> CUSTOMER_DB
+  CUSTOMER_DB -[hidden]right-> DRIVER_DB
+  DRIVER_DB -[hidden]right-> BOOKING_DB
+  AUTH_DB -[hidden]down-> TRIP_DB
+  TRIP_DB -[hidden]right-> PAYMENT_DB
+  PAYMENT_DB -[hidden]right-> NOTIFICATION_DB
+}
+
+SERVICES -down-> DATA : each service accesses only its own logical database
+
+note bottom of DATA
+  One PostgreSQL container hosts these separate logical databases.
+  Persistent volume: postgres_data.
+end note
+
+note bottom of SERVICES
+  Domain services share a runtime image, started with separate
+  SERVICE_CONTEXT, gRPC port, and database configuration.
+end note
+
+legend bottom
+  |= Style |= Meaning |
+  | <color:#2676D2>━━━ → ━━━</color> | REST / synchronous gRPC / infrastructure access |
+  | <color:#D71920>┄┄┄ → ┄┄┄</color> | Asynchronous Kafka event |
+endlegend
+
+@enduml
