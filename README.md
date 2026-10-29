@@ -15,7 +15,7 @@ An eight-process CAB ride platform prototype: one REST API Gateway and seven ind
 | `payment-service` | Payment & Settlement | `cab_payment` PostgreSQL database; webhook signatures and idempotency |
 | `notification-service` | Notifications | `cab_notification` PostgreSQL database; consumes Kafka events |
 
-PostgreSQL runs as one container with a separate database per service. Redis stores the shared rate-limit counters, driver geo indexes, expiring driver offers, distributed acceptance locks, and revoked-token markers. Kafka carries booking, driver, trip, and payment events. Internal service ports are not published to the host.
+PostgreSQL runs as one container with a separate database per service and is published on `127.0.0.1:5432` for local database tools. Redis stores the shared rate-limit counters, driver geo indexes, expiring driver offers, distributed acceptance locks, and revoked-token markers. Kafka carries booking, driver, trip, and payment events. Other internal service ports are not published to the host.
 
 The seven gRPC services use the shared transport contract at [shared/proto/cab-domain.proto](./shared/proto/cab-domain.proto); each runs as a separate process with a distinct context, port, database, and configuration.
 Compose healthchecks probe each gRPC service and the gateway; the gateway starts only after all domain services report healthy. Containers use the `unless-stopped` restart policy, so Docker restarts them after an engine/host restart unless the stack was explicitly stopped with `docker compose stop` or `docker compose down`.
@@ -36,6 +36,8 @@ Compose healthchecks probe each gRPC service and the gateway; the gateway starts
    docker compose up --build -d
    docker compose ps
    ```
+
+   Connect a local PostgreSQL client to host `127.0.0.1`, port `5432`, using the credentials in `.env`; choose the logical database you want to inspect (for example, `cab_customer`).
 
 4. Wait for the gateway's Compose healthcheck to become healthy (`docker compose ps`), then verify readiness:
 

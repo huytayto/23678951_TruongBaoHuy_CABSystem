@@ -1,0 +1,128 @@
+@startuml
+title CAB System - Microservices Architecture
+
+top to bottom direction
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam nodesep 55
+skinparam ranksep 70
+skinparam padding 12
+skinparam ArrowThickness 1.4
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam packageStyle rectangle
+
+skinparam component {
+  RoundCorner 12
+  BorderColor #5488B8
+  FontColor #202020
+}
+skinparam database {
+  BorderColor #5488B8
+  FontColor #202020
+}
+skinparam package {
+  BorderColor #B7B7B7
+  FontColor #202020
+}
+
+' ==================================================
+' LAYER 1 - CLIENT APPLICATIONS
+' ==================================================
+rectangle "CAB CLIENTS\n\nCustomer App | Driver App | Admin" as CLIENT #D9ECFF
+
+' ==================================================
+' LAYER 2 - PUBLIC API EDGE
+' ==================================================
+component "API GATEWAY\n\nREST API :8080\nJWT Authentication\nRole-based Authorization\nRate Limiting\nRequest Routing" as GW #F0DFFF
+
+CLIENT -down-> GW : REST / JSON\n(public entry point)
+
+' ==================================================
+' LAYER 3 - DOMAIN MICROSERVICES
+' ==================================================
+package "CAB Domain Services - internal gRPC" {
+  component "Auth Service\n\nRegistration / Login / Logout\nJWT issuance\nPassword hashing" as AUTH #D9EEFF
+  component "Customer Service\n\nCustomer profiles\nSensitive-field encryption" as CUSTOMER #D7F9D9
+  component "Driver Service\n\nDriver profiles and approval\nAvailability / location" as DRIVER #FEF0C2
+  component "Booking Service\n\nRide requests\nDriver dispatch / offers" as BOOKING #FFDADA
+  component "Trip Service\n\nTrip lifecycle\nCancellation / rating" as TRIP #EAD9FF
+  component "Payment Service\n\nOnline / cash payment\nWebhook / idempotency" as PAYMENT #FDE2C5
+  component "Notification Service\n\nKafka event consumer\nNotification event logs" as NOTIFICATION #DDEBFF
+}
+
+GW -down-> AUTH : gRPC :50051
+GW -down-> CUSTOMER : gRPC :50052
+GW -down-> DRIVER : gRPC :50053
+GW -down-> BOOKING : gRPC :50054
+GW -down-> TRIP : gRPC :50055
+GW -down-> NOTIFICATION : gRPC :50056
+GW -down-> PAYMENT : gRPC :50057
+
+' Synchronous domain-service calls
+AUTH -right-> CUSTOMER : gRPC\ncreate customer profile
+BOOKING -right-> DRIVER : gRPC\nnearby / set busy
+BOOKING -right-> TRIP : gRPC\ncreate trip
+TRIP -right-> DRIVER : gRPC\nrelease driver
+PAYMENT -right-> TRIP : gRPC\nverify completed trip
+
+' ==================================================
+' LAYER 4 - SHARED INFRASTRUCTURE
+' ==================================================
+database "Redis :6379\n\nGateway rate limit\nJWT revocation\nDriver GEO index\nBooking offer TTL\nBooking / driver locks" as REDIS #FFE4E4
+
+queue "Apache Kafka :9092\n\ncab.booking.events\ncab.driver.events\ncab.trip.events\ncab.payment.events" as KAFKA #F0DFFF
+
+component "Kafka UI :8081\n(local operator UI)" as KAFKA_UI #E9E7FF
+
+GW -down-> REDIS : rate limit\nrevocation checks
+DRIVER -down-> REDIS : GEO availability
+BOOKING -down-> REDIS : offer TTL\nconcurrency locks
+KAFKA_UI -left-> KAFKA : inspect topics / events
+
+' Domain events are asynchronous; Notification Service consumes all four topics.
+DRIVER -[#D71920,dashed]down-> KAFKA : cab.driver.events
+BOOKING -[#D71920,dashed]down-> KAFKA : cab.booking.events
+TRIP -[#D71920,dashed]down-> KAFKA : cab.trip.events
+PAYMENT -[#D71920,dashed]down-> KAFKA : cab.payment.events
+KAFKA -[#D71920,dashed]right-> NOTIFICATION : consume all topics\npersist event logs
+
+' ==================================================
+' LAYER 5 - DATA PERSISTENCE
+' ==================================================
+database "PostgreSQL 16\n(shared server / cab network)\n\nSeparate logical databases:\ncab_auth | cab_customer | cab_driver\ncab_booking | cab_trip | cab_payment\ncab_notification\n\nPersistent volume: postgres_data" as POSTGRES #EAF3FF
+
+AUTH -down-> POSTGRES : SQL\ncab_auth
+CUSTOMER -down-> POSTGRES : SQL\ncab_customer
+DRIVER -down-> POSTGRES : SQL\ncab_driver
+BOOKING -down-> POSTGRES : SQL\ncab_booking
+TRIP -down-> POSTGRES : SQL\ncab_trip
+PAYMENT -down-> POSTGRES : SQL\ncab_payment
+NOTIFICATION -down-> POSTGRES : SQL\ncab_notification
+
+note right of POSTGRES
+  One PostgreSQL container hosts
+  separate logical databases per
+  domain service. Services do not
+  query one another's databases.
+end note
+
+note bottom of GW
+  Domain services share the same
+  runtime image, started separately
+  with SERVICE_CONTEXT and a gRPC port.
+end note
+
+' ==================================================
+' LEGEND
+' ==================================================
+legend bottom
+  |= Style |= Meaning |
+  | <color:#2676D2>━━━ → ━━━</color> | REST API / synchronous gRPC / database access |
+  | <color:#D71920>┄┄┄ → ┄┄┄</color> | Asynchronous Kafka event |
+endlegend
+
+@enduml
