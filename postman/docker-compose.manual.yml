@@ -1,0 +1,12 @@
+# Local manual grading. Same app and infrastructure, no extra service.
+services:
+  auth-service:
+    environment:
+      OTP_TEST_MODE: "true"
+  payment-service:
+    environment:
+      PAYMENT_TEST_MODE: "true"
+  booking-service:
+    environment:
+      # Five minutes gives the examiner time to type requests and switch tokens.
+      OFFER_TTL_SECONDS: "300"

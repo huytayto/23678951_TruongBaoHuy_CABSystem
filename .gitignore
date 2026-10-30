@@ -5,3 +5,6 @@ node_modules/
 npm-debug.log*
 .DS_Store
 coverage/
+postman/*.local.postman_environment.json
+postman/reports/
+postman/MANUAL.local.md

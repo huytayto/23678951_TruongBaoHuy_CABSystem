@@ -15,8 +15,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: postgres
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -85,6 +83,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: auth
+      OTP_TEST_MODE: ${OTP_TEST_MODE:-false}
       GRPC_PORT: 50051
       PGHOST: postgres
       PGPORT: 5432
@@ -133,6 +132,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: driver
+      AUTH_SERVICE_ADDRESS: auth-service:50051
       GRPC_PORT: 50053
       PGHOST: postgres
       PGPORT: 5432
@@ -156,6 +156,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: booking
+      OFFER_TTL_SECONDS: ${OFFER_TTL_SECONDS:-15}
       GRPC_PORT: 50054
       PGHOST: postgres
       PGPORT: 5432
@@ -179,6 +180,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: trip
+      BOOKING_SERVICE_ADDRESS: booking-service:50054
       GRPC_PORT: 50055
       PGHOST: postgres
       PGPORT: 5432
@@ -222,6 +224,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: payment
+      PAYMENT_TEST_MODE: ${PAYMENT_TEST_MODE:-false}
       GRPC_PORT: 50057
       PGHOST: postgres
       PGPORT: 5432

@@ -3,7 +3,7 @@
   "info": {
     "title": "CAB Platform API",
     "version": "3.0.0",
-    "description": "Public REST API exposed exclusively by the API Gateway. Gateway-to-service communication uses gRPC; domain events are delivered asynchronously through Kafka. Text values in JSON responses are HTML-escaped to reduce reflected and stored XSS risk.\n"
+    "description": "Public REST API exposed exclusively by the API Gateway. Gateway-to-service communication uses gRPC; domain events are delivered asynchronously through Kafka. Text values in JSON responses are HTML-escaped to reduce reflected and stored XSS risk. Every /api/v1/... route also accepts the short /... path with identical authentication. Entity references accept UUIDs or readable codes: C1 customer, D1 driver, B1 booking, T1 trip, P1 payment. Use the code returned by the API; existing databases may start new records at higher numbers. Codes are stable, unique, case-insensitive aliases.\n"
   },
   "servers": [
     {
@@ -38,6 +38,16 @@
     }
   ],
   "paths": {
+    "/": {
+      "get": {
+        "summary": "List short URLs and manual usage hints",
+        "responses": {
+          "200": {
+            "description": "Public API directory without credentials"
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -1121,7 +1131,8 @@
                 "properties": {
                   "trip_id": {
                     "type": "string",
-                    "format": "uuid"
+                    "description": "Trip UUID or readable T code",
+                    "example": "T1"
                   }
                 }
               }
@@ -1164,7 +1175,8 @@
                 "properties": {
                   "trip_id": {
                     "type": "string",
-                    "format": "uuid"
+                    "description": "Trip UUID or readable T code",
+                    "example": "T1"
                   },
                   "amount": {
                     "type": "number",
@@ -1206,8 +1218,7 @@
                 "properties": {
                   "order_id": {
                     "type": "string",
-                    "format": "uuid",
-                    "description": "Payment ID"
+                    "description": "Payment UUID or P code. HMAC covers the literal supplied order_id."
                   },
                   "status": {
                     "type": "string",
@@ -1270,6 +1281,479 @@
           }
         }
       }
+    },
+    "/api/v1/auth/otp/request": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Request driver phone OTP (authenticated DRIVER)",
+        "description": "Local demo transport requires OTP_TEST_MODE=true. Production SMS adapter is not implemented. OTP expires in 300 seconds; resend cooldown 30 seconds.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "phone"
+                ],
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9]{9,15}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Challenge created without exposing code"
+          },
+          "400": {
+            "description": "Invalid phone"
+          },
+          "429": {
+            "description": "Resend cooldown"
+          },
+          "503": {
+            "description": "Local test mode disabled and SMS adapter unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Verify single-use phone OTP before driver profile submission",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "challenge_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Optional. Defaults to the current challenge of the authenticated driver."
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[0-9]{6}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Phone verified for ten minutes; consumed on profile registration"
+          },
+          "400": {
+            "description": "Wrong",
+            "expired": null,
+            "or consumed OTP": null
+          },
+          "403": {
+            "description": "Challenge belongs to another driver"
+          },
+          "429": {
+            "description": "Too many verification attempts"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/test/otp/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "ADMIN-only local OTP test inbox",
+        "description": "Only enabled by OTP_TEST_MODE=true. Never enable on a public deployment. Simulates SMS delivery for rubric testing.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Local demo OTP code"
+          },
+          "403": {
+            "description": "ADMIN required"
+          },
+          "404": {
+            "description": "Test mode disabled or challenge expired"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/drivers": {
+      "get": {
+        "tags": [
+          "Drivers"
+        ],
+        "summary": "List pending driver profiles (ADMIN only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending profiles and pagination"
+          },
+          "403": {
+            "description": "ADMIN required"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/offers": {
+      "get": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "List unexpired booking offers addressed to authenticated driver",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Offers with pickup and dropoff coordinates"
+          },
+          "403": {
+            "description": "DRIVER required"
+          }
+        }
+      }
+    },
+    "/api/v1/bookings/{id}/trip": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Trips"
+        ],
+        "summary": "Resolve booking to trip and assigned driver (participants or ADMIN only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trip",
+            "payment_status": null,
+            "payment_id": null,
+            "location": null,
+            "and assigned driver": null
+          },
+          "403": {
+            "description": "Not a trip participant"
+          },
+          "404": {
+            "description": "No trip assigned yet"
+          }
+        }
+      }
+    },
+    "/api/v1/trips/{id}/location": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Trips"
+        ],
+        "summary": "Update live trip coordinates (assigned DRIVER only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "latitude",
+                  "longitude"
+                ],
+                "properties": {
+                  "latitude": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  "longitude": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Location persisted and event published"
+          },
+          "400": {
+            "description": "Invalid coordinates"
+          },
+          "409": {
+            "description": "Trip inactive or driver not assigned"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/me": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Poll notification inbox for authenticated user",
+        "description": "Durable inbox populated asynchronously from Kafka. No push/SMS transport.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notifications where customer_id or driver_id matches token subject"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Read own simulated SMS inbox (DRIVER, local OTP_TEST_MODE only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Own current challenge ID and code"
+          },
+          "403": {
+            "description": "DRIVER role required"
+          },
+          "404": {
+            "description": "Local OTP disabled or challenge missing"
+          }
+        }
+      }
+    },
+    "/api/v1/drivers/me": {
+      "get": {
+        "tags": [
+          "Drivers"
+        ],
+        "summary": "Get own profile and readable driver code",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Driver profile"
+          },
+          "404": {
+            "description": "Profile not yet submitted"
+          }
+        }
+      }
+    },
+    "/api/v1/bookings/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Bookings"
+        ],
+        "summary": "Get booking by B code or UUID (owner, offered or assigned driver, ADMIN)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Booking with readable code"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "404": {
+            "description": "Booking not found"
+          }
+        }
+      }
+    },
+    "/api/v1/payments/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Read payment by P code or UUID (trip participants or ADMIN)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payment status without internal response snapshot"
+          },
+          "403": {
+            "description": "Not a participant"
+          },
+          "404": {
+            "description": "Payment not found"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/payments/{id}/callback": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "ADMIN-only local payment provider simulator",
+        "description": "Requires PAYMENT_TEST_MODE=true. Computes HMAC internally and calls the same webhook handler; does not expose the secret. No real money is transferred.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "SUCCESS",
+                      "FAILED"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed callback processed"
+          },
+          "400": {
+            "description": "Invalid status"
+          },
+          "403": {
+            "description": "ADMIN role required"
+          },
+          "404": {
+            "description": "Simulator disabled or payment missing"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1285,6 +1769,7 @@
         "name": "id",
         "in": "path",
         "required": true,
+        "description": "UUID or readable entity code (C1, D1, B1, T1, P1), as appropriate for the route",
         "schema": {
           "type": "string"
         }

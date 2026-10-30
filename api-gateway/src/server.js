@@ -10,6 +10,7 @@ const Redis = require('ioredis');
 const { authorize, requireAuth } = require('./auth');
 const { contexts, invoke } = require('./grpcClients');
 const RedisRateLimitStore = require('./redisRateLimitStore');
+const { isPublicCode } = require('../../services/public-codes');
 
 process.env.PGHOST = process.env.PGHOST || process.env.POSTGRES_HOST;
 process.env.PGPORT = process.env.PGPORT || process.env.POSTGRES_PORT || '5432';
@@ -57,6 +58,14 @@ app.use((req, res, next) => {
   });
 });
 
+// Short paths use exactly the same handlers, authentication and rate limiter.
+app.use((req, _res, next) => {
+  if (/^\/(auth|customers|drivers|admin|bookings|trips|payments|notifications|demo)(\/|\?|$)/.test(req.url)) {
+    req.url = `/api/v1${req.url}`;
+  }
+  next();
+});
+
 function sendDomainResult(res, result) {
   if (!result || !Number.isInteger(result.status) || !result.body) {
     return res.status(502).json({ success: false, message: 'Invalid response from service' });
@@ -67,7 +76,23 @@ function sendDomainResult(res, result) {
 function serviceRoute(context, action, payloadFromRequest) {
   return async (req, res) => {
     try {
-      const result = await invoke(context, action, payloadFromRequest(req));
+      const payload = payloadFromRequest(req);
+      const references = {
+        customer: { uid: 'customer' }, driver: { uid: 'driver' },
+        booking: { booking_id: 'booking' }, trip: { trip_id: 'trip', booking_id: 'booking' },
+        payment: { trip_id: 'trip', order_id: 'payment', payment_id: 'payment' },
+      };
+      for (const [field, target] of Object.entries(references[context] || {})) {
+        // Webhook signatures cover the literal order_id supplied by the sender.
+        if (context === 'payment' && action === 'webhook' && field === 'order_id') continue;
+        if (!isPublicCode(target, payload[field])) continue;
+        // Authorization middleware has already run. Ownership is checked by the
+        // domain service against the resolved UUID, never against a client alias.
+        const reference = await invoke(target, 'resolve_code', { code: payload[field] });
+        if (reference.status !== 200) return sendDomainResult(res, reference);
+        payload[field] = reference.body.id;
+      }
+      const result = await invoke(context, action, payload);
       return sendDomainResult(res, result);
     } catch (error) {
       console.error(`${context}.${action} request failed:`, error.message);
@@ -114,6 +139,20 @@ async function checkAllServices() {
 }
 
 app.get('/health', (_req, res) => res.json({ status: 'healthy' }));
+app.get('/', (_req, res) => res.json({
+  name: 'CAB API', base_url: 'http://localhost:8080',
+  usage: 'Use GET/POST/PATCH in Postman. Protected routes require Authorization: Bearer <token>.',
+  codes: { customer: 'C1', driver: 'D1', booking: 'B1', trip: 'T1', payment: 'P1' },
+  note: 'Codes are returned in the code field; examples may refer to older records. UUID and /api/v1 paths remain supported.',
+  routes: ['GET /health', 'GET /ready', 'POST /auth/register', 'POST /auth/login',
+    'GET /customers/me', 'GET /drivers/me', 'POST /auth/otp/request', 'GET /auth/otp', 'POST /auth/otp/verify',
+    'POST /drivers/register', 'GET /admin/drivers', 'PATCH /admin/drivers/D1/approve', 'PATCH /drivers/availability',
+    'GET /drivers/nearby?lat=10.77&lng=106.70&radius=1km&limit=2&page=1',
+    'POST /bookings', 'GET /bookings?limit=2&page=1', 'GET /drivers/offers',
+    'POST /bookings/B1/accept', 'GET /bookings/B1/trip', 'GET /trips/T1', 'PATCH /trips/T1/status',
+    'PATCH /trips/T1/location', 'POST /trips/T1/cancel', 'POST /trips/T1/rating', 'POST /payments/online',
+    'GET /payments/P1', 'POST /demo/payments/P1/callback', 'GET /notifications/me'],
+}));
 
 app.get('/ready', async (_req, res) => {
   try {
@@ -136,6 +175,14 @@ app.get('/health/services', async (_req, res) => {
 
 app.post('/api/v1/auth/register', serviceRoute('auth', 'register', (req) => req.body));
 app.post('/api/v1/auth/login', serviceRoute('auth', 'login', (req) => req.body));
+app.post('/api/v1/auth/otp/request', authn, authorize('DRIVER'),
+  serviceRoute('auth', 'otp_request', (req) => ({ phone: req.body.phone, uid: req.user.sub })));
+app.get('/api/v1/auth/otp', authn, authorize('DRIVER'),
+  serviceRoute('auth', 'otp_test_code', (req) => ({ uid: req.user.sub })));
+app.post('/api/v1/auth/otp/verify', authn, authorize('DRIVER'),
+  serviceRoute('auth', 'otp_verify', (req) => ({ challenge_id: req.body.challenge_id, code: req.body.code, uid: req.user.sub })));
+app.get('/api/v1/admin/test/otp/:id', authn, authorize('ADMIN'),
+  serviceRoute('auth', 'otp_test_code', (req) => ({ challenge_id: req.params.id })));
 app.post('/api/v1/auth/logout', authn, serviceRoute('auth', 'logout', (req) => ({
   uid: req.user.sub,
   token_hash: req.tokenHash,
@@ -144,18 +191,14 @@ app.post('/api/v1/auth/logout', authn, serviceRoute('auth', 'logout', (req) => (
 
 app.get('/api/v1/customers/me', authn, authorize('CUSTOMER', 'ADMIN'),
   serviceRoute('customer', 'get_profile', (req) => ({ uid: req.user.sub })));
-app.get('/api/v1/customers/:id', authn, (req, res, next) => {
-  if (req.user.role !== 'ADMIN' && (req.user.role !== 'CUSTOMER' || req.user.sub !== req.params.id)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
-  return next();
-}, serviceRoute('customer', 'get_profile', (req) => ({ uid: req.params.id })));
+app.get('/api/v1/customers/:id', authn, authorize('CUSTOMER', 'ADMIN'),
+  serviceRoute('customer', 'get_for_user', (req) => ({ uid: req.params.id, requester_id: req.user.sub, role: req.user.role })));
 app.post('/api/v1/customers', authn, authorize('ADMIN'),
   serviceRoute('customer', 'create_profile', (req) => req.body));
 app.get('/api/v1/customers', authn, authorize('ADMIN'),
   serviceRoute('customer', 'list_profiles', (req) => ({ limit: req.query.limit, page: req.query.page })));
 app.put('/api/v1/customers/:id', authn, authorize('ADMIN'), serviceRoute('customer', 'update_profile', (req) => ({
-  uid: req.params.id, ...req.body,
+  ...req.body, uid: req.params.id,
 })));
 app.delete('/api/v1/customers/:id', authn, authorize('ADMIN'),
   serviceRoute('customer', 'delete_profile', (req) => ({ uid: req.params.id })));
@@ -163,6 +206,12 @@ app.delete('/api/v1/customers/:id', authn, authorize('ADMIN'),
 app.post('/api/v1/drivers/register', authn, authorize('DRIVER'), serviceRoute('driver', 'register', (req) => ({
   ...req.body, uid: req.user.sub,
 })));
+app.get('/api/v1/admin/drivers', authn, authorize('ADMIN'),
+  serviceRoute('driver', 'list_pending', (req) => ({ limit: req.query.limit, page: req.query.page })));
+app.get('/api/v1/drivers/offers', authn, authorize('DRIVER'),
+  serviceRoute('booking', 'offers_for_driver', (req) => ({ driver_id: req.user.sub })));
+app.get('/api/v1/drivers/me', authn, authorize('DRIVER'),
+  serviceRoute('driver', 'get', (req) => ({ uid: req.user.sub, requester_id: req.user.sub, role: req.user.role })));
 app.patch('/api/v1/admin/drivers/:id/approve', authn, authorize('ADMIN'),
   serviceRoute('driver', 'approve', (req) => ({ uid: req.params.id, approve: req.body.approve !== false })));
 app.patch('/api/v1/drivers/availability', authn, authorize('DRIVER'),
@@ -183,6 +232,10 @@ app.get('/api/v1/bookings', authn, authorize('CUSTOMER', 'ADMIN'),
   serviceRoute('booking', 'list_by_customer', (req) => ({
     customer_id: req.user.sub, limit: req.query.limit, page: req.query.page,
   })));
+app.get('/api/v1/bookings/:id/trip', authn, authorize('CUSTOMER', 'DRIVER', 'ADMIN'),
+  serviceRoute('trip', 'get_by_booking', (req) => ({ booking_id: req.params.id, user_id: req.user.sub, role: req.user.role })));
+app.get('/api/v1/bookings/:id', authn, authorize('CUSTOMER', 'DRIVER', 'ADMIN'),
+  serviceRoute('booking', 'get_for_user', (req) => ({ booking_id: req.params.id, user_id: req.user.sub, role: req.user.role })));
 app.post('/api/v1/bookings/:id/accept', authn, authorize('DRIVER'),
   serviceRoute('booking', 'accept', (req) => ({ booking_id: req.params.id, driver_id: req.user.sub })));
 app.post('/api/v1/bookings/:id/cancel', authn, authorize('CUSTOMER'), serviceRoute('booking', 'cancel', (req) => ({
@@ -192,6 +245,9 @@ app.post('/api/v1/bookings/:id/cancel', authn, authorize('CUSTOMER'), serviceRou
 app.patch('/api/v1/trips/:id/status', authn, authorize('DRIVER'), serviceRoute('trip', 'update_status', (req) => ({
   trip_id: req.params.id, driver_id: req.user.sub, status: req.body.status,
 })));
+app.patch('/api/v1/trips/:id/location', authn, authorize('DRIVER'),
+  serviceRoute('trip', 'update_location', (req) => ({ trip_id: req.params.id, driver_id: req.user.sub,
+    latitude: req.body.latitude, longitude: req.body.longitude })));
 app.get('/api/v1/trips/:id', authn, authorize('CUSTOMER', 'DRIVER', 'ADMIN'),
   serviceRoute('trip', 'get_for_user', (req) => ({
     trip_id: req.params.id, user_id: req.user.sub, role: req.user.role,
@@ -213,9 +269,15 @@ app.post('/api/v1/payments/cash-confirm', authn, authorize('DRIVER'), serviceRou
   ...req.body, driver_id: req.user.sub,
 })));
 app.post('/api/v1/payments/webhook', serviceRoute('payment', 'webhook', (req) => req.body));
+app.get('/api/v1/payments/:id', authn, authorize('CUSTOMER', 'DRIVER', 'ADMIN'),
+  serviceRoute('payment', 'get_for_user', (req) => ({ payment_id: req.params.id, user_id: req.user.sub, role: req.user.role })));
+app.post('/api/v1/demo/payments/:id/callback', authn, authorize('ADMIN'),
+  serviceRoute('payment', 'demo_callback', (req) => ({ order_id: req.params.id, status: req.body.status })));
 
 app.get('/api/v1/notifications/logs', authn, authorize('ADMIN'),
   serviceRoute('notification', 'logs', (req) => ({ limit: req.query.limit })));
+app.get('/api/v1/notifications/me', authn,
+  serviceRoute('notification', 'for_user', (req) => ({ user_id: req.user.sub, limit: req.query.limit })));
 
 app.use((error, _req, res, _next) => {
   if (error instanceof SyntaxError && error.status === 400) {

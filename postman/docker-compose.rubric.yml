@@ -1,0 +1,5 @@
+# Local grading only. Never enable this test inbox on a public deployment.
+services:
+  auth-service:
+    environment:
+      OTP_TEST_MODE: "true"

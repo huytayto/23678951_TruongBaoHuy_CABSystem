@@ -96,6 +96,17 @@ async function main() {
   });
   const driverSession = expectStatus(driverLogin, 200, 'driver login');
   const driverHeaders = { Authorization: `Bearer ${driverSession.token}` };
+  const otpChallenge = expectStatus(await request('/api/v1/auth/otp/request', {
+    method: 'POST', headers: driverHeaders,
+    body: JSON.stringify({ phone: `+849${String(Date.now()).slice(-8)}` }),
+  }), 201, 'local driver OTP request');
+  const otpInbox = expectStatus(await request(`/api/v1/admin/test/otp/${otpChallenge.challenge_id}`, {
+    headers: adminHeaders,
+  }), 200, 'admin local OTP inbox');
+  expectStatus(await request('/api/v1/auth/otp/verify', {
+    method: 'POST', headers: driverHeaders,
+    body: JSON.stringify({ challenge_id: otpChallenge.challenge_id, code: otpInbox.code }),
+  }), 200, 'driver phone verification');
   expectStatus(await request('/api/v1/drivers/register', {
     method: 'POST',
     headers: driverHeaders,

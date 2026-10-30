@@ -10,5 +10,6 @@ SRS-Document
 Test-Cases
 tests
 scripts
+postman
 README.md
 *.pdf
