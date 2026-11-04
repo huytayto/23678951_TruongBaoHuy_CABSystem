@@ -683,6 +683,7 @@
           "Drivers"
         ],
         "summary": "Set driver online or offline",
+        "description": "Coordinates are optional. When omitted, the saved location is retained. Drivers without a location can go online but are excluded from nearby search. If supplied when going online, both coordinates must be valid.",
         "security": [
           {
             "BearerAuth": []

@@ -623,15 +623,19 @@ async function invoke(action, payload) {
         if (typeof payload.online !== 'boolean') return failure(400, 'online must be a boolean');
         const online = payload.online;
         const { latitude, longitude } = payload;
-        if (online && !isValidCoordinates(latitude, longitude)) return failure(400, 'Valid latitude and longitude are required when going online');
+        const hasLocation = latitude !== undefined || longitude !== undefined;
+        if (online && hasLocation && !isValidCoordinates(latitude, longitude)) return failure(400, 'Valid latitude and longitude must be provided together');
         const result = await pool.query(
           `UPDATE drivers SET availability = $2, latitude = COALESCE($3,latitude), longitude = COALESCE($4,longitude)
            WHERE uid = $1 AND approval_status = 'ACTIVE' AND availability <> 'BUSY'
            RETURNING uid, approval_status, availability, latitude, longitude`,
-          [payload.uid, online ? 'AVAILABLE' : 'OFFLINE', online ? Number(latitude) : null, online ? Number(longitude) : null],
+          [payload.uid, online ? 'AVAILABLE' : 'OFFLINE', online && hasLocation ? Number(latitude) : null, online && hasLocation ? Number(longitude) : null],
         );
         if (!result.rows[0]) return failure(403, 'Active driver profile required');
-        if (online) await redis.geoadd('cab:drivers:available', Number(longitude), Number(latitude), payload.uid);
+        const driver = result.rows[0];
+        if (online && isValidCoordinates(driver.latitude, driver.longitude)) {
+          await redis.geoadd('cab:drivers:available', Number(driver.longitude), Number(driver.latitude), payload.uid);
+        }
         else await redis.zrem('cab:drivers:available', payload.uid);
         await publish('cab.driver.events', {
           event_type: 'DriverAvailabilityChanged', aggregate_id: payload.uid,

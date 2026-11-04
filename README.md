@@ -76,6 +76,8 @@ The complete public REST contract is [API-Specifications/cab-openapi-spec.yaml](
 
 Register only `CUSTOMER` or `DRIVER` accounts through the public API. An `ADMIN` account is provisioned by the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables. Customer registration creates its profile through the Customer Service; a driver must register a profile and be approved before going online.
 
+Drivers can go online with `PATCH /api/v1/drivers/availability` and body `{"online":true}` without providing their current location. The saved location is retained; drivers without a saved location are excluded from nearby search. Optional `latitude` and `longitude` must be supplied together and valid when going online.
+
 Passwords must be supplied as strings, with no length or character requirements; empty strings are accepted. Passwords are bcrypt-hashed; customer name/address and driver license/plate data are encrypted with AES-256-GCM using separate environment-injected keys. Access tokens are HS256 JWTs valid for one hour. Logout revokes the token until expiration using Redis. String values in JSON responses are HTML-escaped.
 
 For local at-rest verification, create at least one customer and driver profile, then run:
