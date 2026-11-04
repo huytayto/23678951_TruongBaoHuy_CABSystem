@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: CAB Rating Service API
+  version: 1.0.0
+  description: Microservice Quản lý Đánh giá Chuyến đi (Rating & Review) (Phù hợp
+    kiến trúc Microservices - Rubric IUH MSA).
+servers:
+- url: http://localhost:8080
+  description: API Gateway / Local Environment
+tags:
+- name: Rating
+  description: Đánh giá Chuyến đi
+paths:
+  /api/v1/trips/{id}/rating:
+    post:
+      tags:
+      - Rating Service
+      summary: Đánh giá Chuyến đi (Số sao & Nhận xét)
+      description: Khách hàng gửi đánh giá từ 1-5 sao và nhận xét sau khi hoàn thành
+        chuyến đi. [Rubric Item 20]
+      operationId: rateTrip
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - stars
+              properties:
+                stars:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  example: 5
+                comment:
+                  type: string
+                  example: Tài xế thân thiện, xe sạch sẻ, đi an toàn!
+      responses:
+        '201':
+          description: Gửi đánh giá thành công
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rating_id:
+                    type: string
+                    format: uuid
+                  trip_id:
+                    type: string
+                    format: uuid
+                  stars:
+                    type: integer
+                    example: 5
+                  comment:
+                    type: string
+                    example: Tài xế thân thiện, xe sạch sẻ, đi an toàn!
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Nhập JWT Access Token nhận được từ API `/api/v1/auth/login`. [Rubric
+        Item 10, 27]
+    IdempotencyKey:
+      type: apiKey
+      in: header
+      name: Idempotency-Key
+      description: Header chống lặp nộp giao dịch thanh toán. [Rubric Item 30]
+  responses:
+    BadRequest:
+      description: Dữ liệu yêu cầu không hợp lệ (Validation Failed / SQL Injection
+        Attempt). [Rubric Item 25]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Chưa đăng nhập hoặc JWT Token không hợp lệ / Hết hạn. [Rubric Item
+        27]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Không có quyền truy cập endpoint này (403 Access Denied). [Rubric
+        Item 28]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Không tìm thấy tài nguyên yêu cầu (404 Not Found)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Xung đột dữ liệu (SĐT/Email đã tồn tại hoặc Trip đã được tài xế
+        khác nhận)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Gửi request quá tần suất cho phép (429 Too Many Requests). [Rubric
+        Item 29]
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 400
+        error:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Dữ liệu đầu vào không hợp lệ hoặc chứa ký tự bị cấm.
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-09-30T08:00:00Z'
+    CustomerRegisterRequest:
+      type: object
+      required:
+      - phone
+      - email
+      - full_name
+      - password
+      properties:
+        phone:
+          type: string
+          example: 0901234567
+        email:
+          type: string
+          format: email
+          example: nguyenvana@gmail.com
+        full_name:
+          type: string
+          example: Nguyễn Văn A
+        password:
+          type: string
+          format: password
+          example: Secret123!
+    DriverRegisterRequest:
+      type: object
+      required:
+      - phone
+      - email
+      - full_name
+      - password
+      - license_number
+      - vehicle_type
+      - license_plate
+      properties:
+        phone:
+          type: string
+          example: 0918765432
+        email:
+          type: string
+          format: email
+          example: tranvanb@gmail.com
+        full_name:
+          type: string
+          example: Trần Văn B
+        password:
+          type: string
+          format: password
+          example: DriverPass123!
+        license_number:
+          type: string
+          example: B2-79182391
+        vehicle_type:
+          type: string
+          enum:
+          - BIKE
+          - CAR_4s
+          - CAR_7s
+          example: CAR_4s
+        license_plate:
+          type: string
+          example: 51H-123.45
+    UserRegisterResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        phone:
+          type: string
+          example: 0901234567
+        full_name:
+          type: string
+          example: Nguyễn Văn A
+        role:
+          type: string
+          example: CUSTOMER
+        created_at:
+          type: string
+          format: date-time
+    DriverRegisterResponse:
+      type: object
+      properties:
+        driver_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          example: Trần Văn B
+        status:
+          type: string
+          example: PENDING_APPROVAL
+        created_at:
+          type: string
+          format: date-time
+    LoginRequest:
+      type: object
+      required:
+      - username
+      - password
+      properties:
+        username:
+          type: string
+          example: 0901234567
+        password:
+          type: string
+          format: password
+          example: Secret123!
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 86400
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          example: CUSTOMER
+    CustomerProfileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          example: Nguyễn Văn A
+        phone:
+          type: string
+          example: 0901234567
+        email:
+          type: string
+          example: nguyenvana@gmail.com
+        rating:
+          type: number
+          example: 4.9
+    DriverProfileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+          example: Trần Văn B
+        phone:
+          type: string
+          example: 0918765432
+        vehicle_type:
+          type: string
+          example: CAR_4s
+        license_plate:
+          type: string
+          example: 51H-123.45
+        rating:
+          type: number
+          example: 4.85
+        status:
+          type: string
+          example: ACTIVE
+        availability:
+          type: string
+          example: ONLINE
+    CreateBookingRequest:
+      type: object
+      required:
+      - pickup_address
+      - pickup_lat
+      - pickup_lng
+      - dropoff_address
+      - dropoff_lat
+      - dropoff_lng
+      - vehicle_type
+      - payment_method
+      properties:
+        pickup_address:
+          type: string
+          example: 12 Nguyễn Văn Bảo, Phường 4, Gò Vấp, TP.HCM
+        pickup_lat:
+          type: number
+          example: 10.822159
+        pickup_lng:
+          type: number
+          example: 106.686835
+        dropoff_address:
+          type: string
+          example: Sân bay Tân Sơn Nhất, Tân Bình, TP.HCM
+        dropoff_lat:
+          type: number
+          example: 10.818463
+        dropoff_lng:
+          type: number
+          example: 106.658824
+        vehicle_type:
+          type: string
+          enum:
+          - BIKE
+          - CAR_4s
+          - CAR_7s
+          example: CAR_4s
+        payment_method:
+          type: string
+          enum:
+          - CASH
+          - E_WALLET
+          example: E_WALLET
+    BookingResponse:
+      type: object
+      properties:
+        booking_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: SEARCHING_DRIVER
+        estimated_distance_km:
+          type: number
+          example: 4.5
+        estimated_fare:
+          type: number
+          example: 65000
+        created_at:
+          type: string
+          format: date-time
+    TripResponse:
+      type: object
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        driver_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: DRIVER_EN_ROUTE
+        fare_amount:
+          type: number
+          example: 65000
+        updated_at:
+          type: string
+          format: date-time
+    PaginatedBookingResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingResponse'
+        total:
+          type: integer
+          example: 15
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        total_pages:
+          type: integer
+          example: 2
+    PaginatedNearbyDriversResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              driver_id:
+                type: string
+                format: uuid
+              full_name:
+                type: string
+                example: Trần Văn B
+              lat:
+                type: number
+                example: 10.8225
+              lng:
+                type: number
+                example: 106.687
+              distance_meters:
+                type: number
+                example: 250
+              vehicle_type:
+                type: string
+                example: CAR_4s
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
