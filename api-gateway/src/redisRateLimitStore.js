@@ -11,10 +11,11 @@ const incrementScript = `
 `;
 
 class RedisRateLimitStore {
-  constructor(redis) {
+  constructor(redis, prefix = 'cab:rate-limit:') {
     this.redis = redis;
     this.localKeys = false;
     this.windowMs = 1000;
+    this.prefix = prefix;
   }
 
   init(options) {
@@ -23,7 +24,7 @@ class RedisRateLimitStore {
 
   keyFor(key) {
     const digest = crypto.createHash('sha256').update(key).digest('hex');
-    return `cab:rate-limit:${digest}`;
+    return `${this.prefix}${digest}`;
   }
 
   async increment(key) {

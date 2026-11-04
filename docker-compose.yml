@@ -24,6 +24,8 @@ services:
       timeout: 5s
       retries: 20
     networks: [cab]
+    ports:
+      - "127.0.0.1:5432:5432"
 
   redis:
     image: redis:7-alpine
@@ -83,6 +85,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: auth
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       OTP_TEST_MODE: ${OTP_TEST_MODE:-false}
       GRPC_PORT: 50051
       PGHOST: postgres
@@ -110,6 +113,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: customer
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       GRPC_PORT: 50052
       PGHOST: postgres
       PGPORT: 5432
@@ -132,6 +136,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: driver
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       AUTH_SERVICE_ADDRESS: auth-service:50051
       GRPC_PORT: 50053
       PGHOST: postgres
@@ -156,6 +161,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: booking
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       OFFER_TTL_SECONDS: ${OFFER_TTL_SECONDS:-15}
       GRPC_PORT: 50054
       PGHOST: postgres
@@ -180,6 +186,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: trip
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       BOOKING_SERVICE_ADDRESS: booking-service:50054
       GRPC_PORT: 50055
       PGHOST: postgres
@@ -203,6 +210,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: notification
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       GRPC_PORT: 50056
       PGHOST: postgres
       PGPORT: 5432
@@ -224,6 +232,7 @@ services:
     command: ["node", "services/domain-service.js"]
     environment:
       SERVICE_CONTEXT: payment
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       PAYMENT_TEST_MODE: ${PAYMENT_TEST_MODE:-false}
       GRPC_PORT: 50057
       PGHOST: postgres
@@ -248,6 +257,7 @@ services:
     command: ["node", "api-gateway/src/server.js"]
     environment:
       PORT: 8080
+      SMOKE_MODE: ${SMOKE_MODE:-false}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-1000}
       AUTH_SERVICE_ADDRESS: auth-service:50051

@@ -1,0 +1,13 @@
+{
+  "id": "823bdf70-b1d9-4259-9b25-2fe452b30020",
+  "name": "CAB - Demo 20 phút",
+  "_postman_variable_scope": "environment",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "default",
+      "enabled": true
+    }
+  ]
+}

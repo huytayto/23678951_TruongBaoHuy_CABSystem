@@ -14,11 +14,17 @@ paths:
             schema:
               type: object
               properties:
-                license_number: {type: string, example: "79A-12345"}
-                plate_number: {type: string, example: "51H-999.99"}
-                vehicle_type: {type: string, example: "CAB_4_SEAT"}
+                license_number:
+                  type: string
+                  example: 79A-12345
+                plate_number:
+                  type: string
+                  example: 51H-999.99
+                vehicle_type:
+                  type: string
+                  example: CAB_4_SEAT
       responses:
-        '201':
+        "201":
           description: Registered in PENDING_APPROVAL status
   /api/v1/admin/drivers/{id}/approve:
     patch:
@@ -26,9 +32,9 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Driver approved and activated
-        '403':
+        "403":
           description: Forbidden (Admin only)
   /api/v1/drivers/availability:
     patch:
@@ -36,7 +42,7 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Availability updated
   /api/v1/drivers/nearby:
     get:
@@ -45,20 +51,30 @@ paths:
         - name: lat
           in: query
           required: true
-          schema: {type: number, example: 10.776889}
+          schema:
+            type: number
+            example: 22
         - name: lng
           in: query
           required: true
-          schema: {type: number, example: 106.700806}
+          schema:
+            type: number
+            example: 111
         - name: radius
           in: query
-          schema: {type: string, example: "1km"}
+          schema:
+            type: string
+            example: 1km
         - name: limit
           in: query
-          schema: {type: integer, example: 5}
+          schema:
+            type: integer
+            example: 5
         - name: page
           in: query
-          schema: {type: integer, example: 1}
+          schema:
+            type: integer
+            example: 1
       responses:
-        '200':
+        "200":
           description: List of nearby drivers with pagination

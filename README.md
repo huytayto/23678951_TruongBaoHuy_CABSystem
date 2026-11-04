@@ -1,6 +1,8 @@
 # CAB Platform
 
-For manually typed Postman requests, use [postman/MANUAL.md](postman/MANUAL.md). Short URLs such as `/auth/login`, `/drivers/D1`, `/bookings/B1/accept`, and `/trips/T1/status` use the same authenticated handlers as `/api/v1/...`. Stable readable codes are assigned by PostgreSQL sequences; UUIDs remain the internal identifiers. Start `docker compose -f docker-compose.yml -f postman/docker-compose.manual.yml up --build -d`, then `npm run manual:prepare` to prepare five drivers, sample bookings and a local Postman environment with tokens. Manual mode provides a five-minute offer window, an own-driver simulated OTP inbox and an ADMIN-only signed payment callback simulator; no extra backend service is needed.
+**Demo chấm 20 phút bằng API nghiệp vụ:** [postman/smoke-20p/README.md](postman/smoke-20p/README.md). Đặt `SMOKE_MODE=true` trong `.env`, chạy `docker compose up --build -d`, import hai file JSON rồi Send từ trên xuống. Có 23 request chính dùng URL nghiệp vụ `/api/...`; script phụ cũng gọi Gateway, không có route điều phối `/smoke/...`. Environment chỉ có `base_url`. Seed tự nạp khi Gateway khởi động; OTP/provider mock chỉ dùng local. Mục 24 chạy `npm run demo:at-rest` để chứng minh DB mã hóa; GET profile không phải bằng chứng at rest. Mục 29 vẫn POST bookings với header demo được điền sẵn, ngưỡng riêng 20/10s; không xác nhận tải 1000 req/s.
+
+The current grading workflow is [postman/smoke-20p/README.md](postman/smoke-20p/README.md). Legacy manual/Postman artifacts are retained for reference; their preparation scripts and evidence helper have been removed. Short authenticated API aliases remain available.
 
 An eight-process CAB ride platform prototype: one REST API Gateway and seven independently deployed DDD bounded-context services. Public REST traffic is exposed only by the gateway. The gateway and synchronous service-to-service calls use gRPC; domain events use Kafka.
 
@@ -58,15 +60,9 @@ Compose healthchecks probe each gRPC service and the gateway; the gateway starts
 
 The database initialization scripts only run when PostgreSQL's data volume is first created. To reset a local development installation, stop the stack and explicitly remove its volumes.
 
-## Optional nearby-driver demo accounts
+## Smoke data and primary IDs
 
-To seed five nearby approved drivers for geo-search and sequential dispatch, set `SEED_DEMO_PASSWORD` in `.env` to a strong password of at least 12 characters, then recreate the auth and driver services:
-
-```powershell
-docker compose up -d --force-recreate auth-service driver-service
-```
-
-The demo usernames are `demo-driver-1` through `demo-driver-5`. This seed option is intended only for local demos; do not enable it in a deployed environment. Each demo driver is already approved and online near the example Ho Chi Minh City pickup coordinates in the OpenAPI document.
+Use SMOKE_MODE=true and keep SEED_DEMO_PASSWORD empty. Smoke accounts: ad, kh0, tx1 through tx5. Their primary IDs are a1, c1, d1 through d5. Customer/driver IDs are allocated by Auth and reused by profiles; booking/trip/payment IDs are b1/t1/p1. There is no code column or UUID entity alias. For an existing UUID database, build the images then run `npm run demo:migrate-ids`; backups are automatic and records are retained. Log in again after migration. `npm run demo:reset` is a separate operation that deliberately clears non-smoke records.
 
 ## API and authorization
 
@@ -80,7 +76,7 @@ The complete public REST contract is [API-Specifications/cab-openapi-spec.yaml](
 
 Register only `CUSTOMER` or `DRIVER` accounts through the public API. An `ADMIN` account is provisioned by the `ADMIN_USERNAME` and `ADMIN_PASSWORD` environment variables. Customer registration creates its profile through the Customer Service; a driver must register a profile and be approved before going online.
 
-Password requirements: 8-128 characters with uppercase, lowercase, numeric, and special characters. Passwords are bcrypt-hashed; customer name/address and driver license/plate data are encrypted with AES-256-GCM using separate environment-injected keys. Access tokens are HS256 JWTs valid for one hour. Logout revokes the token until expiration using Redis. String values in JSON responses are HTML-escaped.
+Passwords must be supplied as strings, with no length or character requirements; empty strings are accepted. Passwords are bcrypt-hashed; customer name/address and driver license/plate data are encrypted with AES-256-GCM using separate environment-injected keys. Access tokens are HS256 JWTs valid for one hour. Logout revokes the token until expiration using Redis. String values in JSON responses are HTML-escaped.
 
 For local at-rest verification, create at least one customer and driver profile, then run:
 
@@ -91,14 +87,14 @@ docker compose exec -T driver-service node services/verify-encryption.js driver
 
 The Compose environment variables are suitable only for local demonstration. Production deployments should inject keys through a secret manager/KMS and plan key rotation with a data re-encryption migration.
 
-Driver offers are sent one at a time in nearest-first order. Each offer expires after 15 seconds by default (`OFFER_TTL_SECONDS`, 300 in the manual grading override); Redis locks prevent two drivers from accepting one booking or a driver from being assigned to concurrent bookings. Trip transitions must occur in order: `DRIVER_ASSIGNED` -> `EN_ROUTE` -> `ARRIVED` -> `PICKED_UP` -> `IN_PROGRESS` -> `COMPLETED`.
+Driver offers are sent one at a time in nearest-first order. Each offer expires after 15 seconds by default (`OFFER_TTL_SECONDS`, 300 in the manual grading override); Redis locks prevent two drivers from accepting one booking or a driver from being assigned to concurrent bookings. Trip transitions must occur in order: `DRIVER_ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`.
 Customers cannot call driver-search/profile endpoints directly; booking matching is performed service-to-service. Assigned driver details are included in the customer-authorized trip detail response.
 
 Online payment initiation requires an `Idempotency-Key`. Replaying the same authenticated customer/trip request with that key returns the exact original response snapshot, even if the payment later settles; a unique database constraint prevents creation of a second payment transaction. The amount is taken from the completed trip, not trusted from client input. Payment creation records a `PENDING` attempt; it does not contact a real payment provider. The local webhook verifies HMAC-SHA256 over `order_id:status` using `PAYMENT_WEBHOOK_SECRET`. This callback flow is a development integration point, not a substitute for a payment provider's production signature and settlement protocol.
 
 ## Smoke testing
 
-The complete Postman suite for all 30 items in `PHIEU_CHAM_PROJECT.pdf` is documented in [postman/README.md](postman/README.md), with a criterion-by-criterion map in [postman/RUBRIC.md](postman/RUBRIC.md). Start local grading mode with `docker compose -f docker-compose.yml -f postman/docker-compose.rubric.yml up --build -d`, then run `npm run test:postman`, or `npm run postman:prepare` to generate a ready-to-import local environment and keep the evidence helper open while using Postman. The suite checks actual database encryption and duplicate-payment counts through that loopback-only helper. OTP delivery uses local simulated inboxes for the owning driver and ADMIN; a production SMS adapter is not implemented.
+Use [postman/smoke-20p/README.md](postman/smoke-20p/README.md) for the current 23-request grading collection. Run `npm run demo:build` after editing its generator, `npm run demo:check` to verify the flow against a running stack, and `npm run demo:at-rest` for database encryption evidence. The legacy Postman runner and evidence helper have been removed.
 
 With the Compose stack ready in local grading mode and `.env` containing admin credentials:
 

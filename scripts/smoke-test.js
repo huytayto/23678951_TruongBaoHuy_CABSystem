@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const { latitude, longitude } = require('../services/smoke-fixtures');
 
 const baseUrl = process.env.API_BASE_URL || 'http://127.0.0.1:8080';
 const adminUsername = process.env.ADMIN_USERNAME;
@@ -51,8 +52,8 @@ async function main() {
   const adminHeaders = { Authorization: `Bearer ${admin.token}` };
 
   const suffix = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
-  const pickupLat = 20 + Math.random() * 20;
-  const pickupLng = 70 + Math.random() * 20;
+  const pickupLat = latitude + 0.1 + Math.random() * 0.8;
+  const pickupLng = longitude + 0.1 + Math.random() * 0.8;
   const customerCredentials = { username: `smoke-customer-${suffix}`, password: 'SmokeTest@123' };
   const customerRegister = await request('/api/v1/auth/register', {
     method: 'POST', body: JSON.stringify(customerCredentials),
@@ -131,7 +132,7 @@ async function main() {
     headers: customerHeaders,
     body: JSON.stringify({
       pickup_lat: pickupLat, pickup_lng: pickupLng,
-      dropoff_lat: 10.7725, dropoff_lng: 106.698,
+      dropoff_lat: pickupLat + 0.01, dropoff_lng: pickupLng + 0.01,
       vehicle_type: 'CAB_4_SEAT',
     }),
   });
@@ -149,7 +150,7 @@ async function main() {
   expectStatus(await request(`/api/v1/trips/${trip.trip_id}/status`, {
     method: 'PATCH', headers: driverHeaders, body: JSON.stringify({ status: 'COMPLETED' }),
   }), 400, 'invalid trip jump rejected');
-  for (const status of ['EN_ROUTE', 'ARRIVED', 'PICKED_UP', 'IN_PROGRESS', 'COMPLETED']) {
+  for (const status of ['IN_PROGRESS', 'COMPLETED']) {
     expectStatus(await request(`/api/v1/trips/${trip.trip_id}/status`, {
       method: 'PATCH', headers: driverHeaders, body: JSON.stringify({ status }),
     }), 200, `trip status ${status}`);
@@ -196,7 +197,7 @@ async function main() {
     headers: customerHeaders,
     body: JSON.stringify({
       pickup_lat: pickupLat, pickup_lng: pickupLng,
-      dropoff_lat: 10.7725, dropoff_lng: 106.698,
+      dropoff_lat: pickupLat + 0.01, dropoff_lng: pickupLng + 0.01,
       vehicle_type: 'CAB_4_SEAT',
     }),
   }), 201, 'create second booking').booking;

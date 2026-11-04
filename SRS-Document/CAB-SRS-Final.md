@@ -29,7 +29,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 
 ## 2. STAKEHOLDERS & STAKEHOLDER MATRIX
 - **Customer (Khách hàng):** Đặt xe, theo dõi tài xế, thanh toán (Online/Tiền mặt), đánh giá chuyến đi.
-- **Driver (Tài xế):** Đăng ký hồ sơ, bật/tắt sẵn sàng (Online/Offline), nhận chuyến đi, cập nhật 5 bước trạng thái chuyến đi.
+- **Driver (Tài xế):** Đăng ký hồ sơ, bật/tắt sẵn sàng (Online/Offline), nhận chuyến đi, cập nhật 2 bước trạng thái chuyến đi.
 - **Admin (Quản trị viên):** Phê duyệt/từ chối hồ sơ tài xế, quản lý tài khoản người dùng, giám sát hệ thống.
 
 ## 3. MỤC TIÊU NGHIỆP VỤ (BUSINESS GOALS - BG)
@@ -47,7 +47,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 
 ## 5. YÊU CẦU NGHIỆP VỤ (BUSINESS REQUIREMENTS - BR)
 - **BR-01 (Xác thực & Phân quyền):** Sử dụng JWT Token, mã hóa mật khẩu Bcrypt, áp dụng RBAC (Member vs Admin).
-- **BR-02 (Luồng Chuyến đi 5 Bước):** Bắt buộc chuyển đổi trạng thái tuần tự: `DRIVER_ASSIGNED` -> `EN_ROUTE` -> `ARRIVED` -> `PICKED_UP` -> `IN_PROGRESS` -> `COMPLETED`.
+- **BR-02 (Luồng Chuyến đi 2 Bước):** Bắt buộc chuyển đổi trạng thái tuần tự: `DRIVER_ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`.
 - **BR-03 (Ghép nối Chống tranh chấp):** Kích hoạt Sequential Dispatch với Redis Distributed Lock (Mutex) đảm bảo chỉ 1 tài xế nhận được chuyến.
 - **BR-04 (Bảo mật NFR):** Chống SQL Injection, XSS HTML Escaping, JWT Tampering (401), Unauthorized Access (403), Rate Limiting 1000 req/s (429), Idempotency Replay Attack (300).
 
@@ -55,7 +55,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 1. **Đăng ký/Đăng nhập:** Customer/Driver đăng ký -> Login nhận JWT Token.
 2. **Onboarding Tài xế:** Driver gửi hồ sơ (`PENDING_APPROVAL`) -> Admin duyệt (`ACTIVE`) -> Driver bật `AVAILABLE`.
 3. **Đặt xe & Ghép chuyến:** Customer tạo Booking (`SEARCHING_DRIVER`) -> Quét tài xế 1km -> Gửi Offer -> Driver chấp nhận -> Tạo Trip (`DRIVER_ASSIGNED`).
-4. **Thực hiện Chuyến đi:** Driver cập nhật 5 bước trạng thái -> Tự động tính cước khi `COMPLETED`.
+4. **Thực hiện Chuyến đi:** Driver cập nhật 2 bước trạng thái -> Tự động tính cước khi `COMPLETED`.
 5. **Thanh toán & Đánh giá:** Thanh toán Online/Tiền mặt -> Customer gửi Đánh giá 5 sao.
 
 ## 7. YÊU CẦU CHỨC NĂNG (FUNCTIONAL REQUIREMENTS - FR)
@@ -64,14 +64,14 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 - **FR-DRV-01:** Đăng ký tài xế, Admin phê duyệt/từ chối, Toggle Online/Offline.
 - **FR-GEO-01:** Tra cứu danh sách tài xế xung quanh 1km (`limit`, `page`).
 - **FR-BOOK-01:** Tạo Booking, Sequential Dispatch, Hủy chuyến kèm lý do.
-- **FR-TRIP-01:** Quản lý 5 bước trạng thái chuyến đi, Tính cước cố định, Đánh giá 5 sao.
+- **FR-TRIP-01:** Quản lý 2 bước trạng thái chuyến đi, Tính cước cố định, Đánh giá 5 sao.
 - **FR-PAY-01:** Webhook Callback thanh toán Online, Xác nhận Tiền mặt, Check Idempotency-Key.
 - **FR-NOTIF-01:** Tiêu thụ sự kiện bất đồng bộ Kafka (`BookingCreated`, `DriverAssigned`, `TripCompleted`).
 
 ## 8. QUY TẮC NGHIỆP VỤ & XỬ LÝ NGOẠI LỆ (BUSINESS RULES & EXCEPTIONS)
 - **BRL-01:** Mật khẩu phải từ 8 ký tự, chứa chữ hoa, chữ thường, số và ký tự đặc biệt.
 - **BRL-02:** Tài xế chưa được Admin duyệt (`PENDING_APPROVAL`) không thể bật `AVAILABLE` hoặc nhận chuyến.
-- **BRL-03:** Không cho phép nhảy cóc trạng thái chuyến đi (VD: `EN_ROUTE` -> `COMPLETED` sẽ trả 400 Bad Request).
+- **BRL-03:** Không cho phép nhảy cóc trạng thái chuyến đi (VD: `DRIVER_ASSIGNED` -> `COMPLETED` sẽ trả 400 Bad Request).
 - **BRL-04:** Mỗi chuyến đi chỉ được đánh giá duy nhất 1 lần.
 
 ## 9. MÔ HÌNH MIỀN DỮ LIỆU & THỰC THỂ (DOMAIN MODEL & ENTITIES)
@@ -79,7 +79,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 - **Customer (Customer DB):** `uid`, `fullname`, `age`, `address`, `created_at`.
 - **Driver (Driver DB):** `uid`, `license_number`, `plate_number`, `vehicle_type` (`CAB_4_SEAT`), `approval_status` (`PENDING_APPROVAL`, `ACTIVE`, `REJECTED`), `availability` (`OFFLINE`, `AVAILABLE`, `BUSY`).
 - **Booking (Booking DB):** `booking_id`, `customer_id`, `pickup_location`, `dropoff_location`, `vehicle_type`, `status` (`CREATED`, `SEARCHING_DRIVER`, `DRIVER_ASSIGNED`, `CANCELED`).
-- **Trip (Trip DB):** `trip_id`, `booking_id`, `driver_id`, `customer_id`, `status` (`DRIVER_ASSIGNED`, `EN_ROUTE`, `ARRIVED`, `PICKED_UP`, `IN_PROGRESS`, `COMPLETED`, `CANCELED`), `fare_amount`.
+- **Trip (Trip DB):** `trip_id`, `booking_id`, `driver_id`, `customer_id`, `status` (`DRIVER_ASSIGNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELED`), `fare_amount`.
 - **Payment (Payment DB):** `payment_id`, `trip_id`, `payment_method` (`ONLINE_PREPAID`, `CASH_POSTPAID`), `status` (`PENDING`, `COMPLETED`, `FAILED`), `idempotency_key`.
 - **Rating (Trip DB):** `rating_id`, `trip_id`, `stars`, `comment`.
 
@@ -92,7 +92,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 | `cab-customer-service`| Customer Service | Node.js / Python | CRUD Profile Khách hàng, phân quyền RBAC Member/Admin. |
 | `cab-driver-service` | Driver Service | Node.js / Go | Đăng ký/Duyệt hồ sơ tài xế, Toggle Online/Offline, Tra cứu tài xế 1km qua Redis Geo. |
 | `cab-booking-service` | Booking Service | Java / Node.js | Đặt xe, Ghép chuyến (Sequential Dispatch), Mutex Lock nhận chuyến, Hủy chuyến. |
-| `cab-trip-service` | Ride & Trip Service | Java / Node.js | Quản lý 5 bước trạng thái chuyến đi, Tính cước cố định, Đánh giá 5 sao. |
+| `cab-trip-service` | Ride & Trip Service | Java / Node.js | Quản lý 2 bước trạng thái chuyến đi, Tính cước cố định, Đánh giá 5 sao. |
 | `cab-notification-svc`| Notification Service| Node.js / Go | Tiêu thụ Kafka Event (`BookingCreated`, `TripCompleted`), Gửi Push/SMS log. |
 | `cab-payment-service` | Payment Service | Java / Node.js | Webhook Callback thanh toán Online, Xác nhận Tiền mặt, Chống Replay Idempotency. |
 | `cab-db-postgres` | PostgreSQL DB | PostgreSQL 16 | CSDL Quan hệ chính (User, Driver, Booking, Trip, Payment). |
@@ -104,7 +104,7 @@ Hệ thống được thiết kế theo kiến trúc **8 Microservices độc l�
 - **UC-02:** Đăng ký & Phê duyệt Hồ sơ Tài xế.
 - **UC-03:** Tra cứu Tài xế Bán kính 1km.
 - **UC-04:** Đặt xe & Ghép tài xế Tự động.
-- **UC-05:** Thực hiện Chuyến đi 5 Bước Trạng thái.
+- **UC-05:** Thực hiện Chuyến đi 2 Bước Trạng thái.
 - **UC-06:** Hủy chuyến đi kèm Lý do.
 - **UC-07:** Thanh toán Online Webhook & Xác nhận Tiền mặt.
 - **UC-08:** Đánh giá Chuyến đi 5 Sao.

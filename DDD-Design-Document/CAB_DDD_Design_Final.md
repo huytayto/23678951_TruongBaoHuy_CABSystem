@@ -50,7 +50,7 @@ Tài liệu này xác định mô hình Domain-Driven Design (DDD) cho Hệ th�
 | **BC-2: Customer Profile** | `cab-customer-service` | Supporting | MongoDB / Postgres | CRUD Hồ sơ Khách hàng, Phân quyền RBAC Member/Admin. |
 | **BC-3: Driver & Fleet** | `cab-driver-service` | Core | PostgreSQL + Redis | Đăng ký/Duyệt tài xế (`PENDING` -> `ACTIVE`), Toggle Online/Offline, Quét 1km. |
 | **BC-4: Booking & Matching** | `cab-booking-service` | Core | PostgreSQL + Redis Lock | Tạo Booking, Sequential Dispatch, Mutex Lock nhận chuyến, Hủy chuyến. |
-| **BC-5: Ride & Trip Execution** | `cab-trip-service` | Core | PostgreSQL | Tiến trình 5 bước chuyến đi, Tính cước cố định, Đánh giá 5 sao. |
+| **BC-5: Ride & Trip Execution** | `cab-trip-service` | Core | PostgreSQL | Tiến trình 2 bước chuyến đi, Tính cước cố định, Đánh giá 5 sao. |
 | **BC-6: Notification** | `cab-notification-service`| Generic | Message Broker Kafka | Tiêu thụ Async Event (`BookingCreated`, `TripCompleted`), Push Log. |
 | **BC-7: Payment & Settlement** | `cab-payment-service` | Core | PostgreSQL | Callback Webhook thanh toán Online, Xác nhận Tiền mặt, Idempotency Check. |
 | **BC-8: API Gateway & Security**| `cab-gateway` | Generic | Redis Rate Limiter | Routing, JWT Verification (401), RBAC (403), Rate Limit (429), Health Check. |
@@ -60,7 +60,7 @@ Tài liệu này xác định mô hình Domain-Driven Design (DDD) cho Hệ th�
 2. **Customer Aggregate (BC-2):** Root `Customer` (`uid`, `fullname`, `age`, `address`). Enforces RBAC permissions.
 3. **Driver Aggregate (BC-3):** Root `Driver` (`uid`, `license_number`, `plate_number`, `vehicle_type`=`CAB_4_SEAT`, `approval_status`, `availability`). Enforces `PENDING_APPROVAL` rule before activating `AVAILABLE`.
 4. **Booking Aggregate (BC-4):** Root `Booking` (`booking_id`, `customer_id`, `pickup_location`, `dropoff_location`, `status`). Enforces sequential dispatch and cancellation invariants.
-5. **Trip Aggregate (BC-5):** Root `Trip` (`trip_id`, `booking_id`, `driver_id`, `status`, `fare_amount`). Enforces 5-step state transitions: `DRIVER_ASSIGNED` -> `EN_ROUTE` -> `ARRIVED` -> `PICKED_UP` -> `IN_PROGRESS` -> `COMPLETED`.
+5. **Trip Aggregate (BC-5):** Root `Trip` (`trip_id`, `booking_id`, `driver_id`, `status`, `fare_amount`). Enforces 2-step state transitions: `DRIVER_ASSIGNED` -> `IN_PROGRESS` -> `COMPLETED`.
 6. **Payment Aggregate (BC-7):** Root `Payment` (`payment_id`, `trip_id`, `amount`, `payment_method`, `status`, `idempotency_key`). Enforces replay attack prevention via unique `idempotency_key`.
 
 ## 4. EVENT-DRIVEN ARCHITECTURE & KAFKA TOPICS

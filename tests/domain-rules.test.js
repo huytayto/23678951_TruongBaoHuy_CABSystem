@@ -17,13 +17,13 @@ test('coordinate validation accepts valid map bounds and rejects missing or out-
   assert.equal(isValidCoordinates(0, 'not-a-number'), false);
 });
 
-test('password validation enforces length and character classes', () => {
-  assert.equal(isValidPassword('Password@123'), true);
-  assert.equal(isValidPassword('password@123'), false);
-  assert.equal(isValidPassword('PASSWORD@123'), false);
-  assert.equal(isValidPassword('PasswordOnly!'), false);
-  assert.equal(isValidPassword('Pass@1'), false);
-  assert.equal(isValidPassword(`A1!${'a'.repeat(126)}`), false);
+test('password accepts strings without length or character requirements', () => {
+  for (const password of ['', '1', 'abc', '123456', ' ', 'Mật khẩu', 'a'.repeat(200)]) {
+    assert.equal(isValidPassword(password), true);
+  }
+  for (const password of [undefined, null, 123, {}, []]) {
+    assert.equal(isValidPassword(password), false);
+  }
 });
 
 test('secrets reject short values and example placeholders', () => {
@@ -50,14 +50,17 @@ test('response string escaping neutralizes HTML while preserving JSON structure'
 
 test('trip transitions permit only the next state in the required sequence', () => {
   const valid = [
-    ['DRIVER_ASSIGNED', 'EN_ROUTE'],
-    ['EN_ROUTE', 'ARRIVED'],
-    ['ARRIVED', 'PICKED_UP'],
-    ['PICKED_UP', 'IN_PROGRESS'],
+    ['DRIVER_ASSIGNED', 'IN_PROGRESS'],
     ['IN_PROGRESS', 'COMPLETED'],
   ];
   for (const [current, next] of valid) assert.equal(isValidTripTransition(current, next), true);
   assert.equal(isValidTripTransition('DRIVER_ASSIGNED', 'COMPLETED'), false);
-  assert.equal(isValidTripTransition('EN_ROUTE', 'PICKED_UP'), false);
-  assert.equal(isValidTripTransition('COMPLETED', 'EN_ROUTE'), false);
+  assert.equal(isValidTripTransition('IN_PROGRESS', 'DRIVER_ASSIGNED'), false);
+  assert.equal(isValidTripTransition('IN_PROGRESS', 'IN_PROGRESS'), false);
+  assert.equal(isValidTripTransition('COMPLETED', 'IN_PROGRESS'), false);
+  assert.equal(isValidTripTransition('COMPLETED', undefined), false);
+  assert.equal(isValidTripTransition('CANCELED', 'IN_PROGRESS'), false);
+  for (const status of ['EN_ROUTE', 'ARRIVED', 'PICKED_UP']) {
+    assert.equal(isValidTripTransition('DRIVER_ASSIGNED', status), false);
+  }
 });

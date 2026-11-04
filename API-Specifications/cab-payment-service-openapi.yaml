@@ -14,11 +14,17 @@ paths:
             schema:
               type: object
               properties:
-                order_id: {type: string, example: "ord-001"}
-                status: {type: string, example: "SUCCESS"}
-                signature: {type: string, example: "valid_hmac_sha256"}
+                order_id:
+                  type: string
+                  example: ord-001
+                status:
+                  type: string
+                  example: SUCCESS
+                signature:
+                  type: string
+                  example: valid_hmac_sha256
       responses:
-        '200':
+        "200":
           description: Webhook processed and payment completed
   /api/v1/payments/cash-confirm:
     post:
@@ -32,18 +38,23 @@ paths:
             schema:
               type: object
               properties:
-                trip_id: {type: string, example: "trip-001"}
-                amount: {type: number, example: 50000}
+                trip_id:
+                  type: string
+                  example: trip-001
+                amount:
+                  type: number
+                  example: 50000
       responses:
-        '200':
+        "200":
           description: Cash payment confirmed
   /api/v1/payments/online:
     post:
       summary: Submit online payment with Idempotency Key protection
       headers:
         Idempotency-Key:
-          schema: {type: string}
+          schema:
+            type: string
           required: true
       responses:
-        '200':
+        "200":
           description: Payment processed without duplicate deduction

@@ -192,7 +192,7 @@ Tai xe phai cap nhat dung thu tu; khong duoc nhay coc trang thai.
 end note
 
 loop Tien trinh chuyen di
-  D -> GW : PATCH /api/v1/trips/{trip_id}/status\nEN_ROUTE / ARRIVED / PICKED_UP /\nIN_PROGRESS / COMPLETED
+  D -> GW : PATCH /api/v1/trips/{trip_id}/status\nIN_PROGRESS / COMPLETED
   activate GW
   GW -> GW : Kiem JWT va role = DRIVER
   GW -> TS : gRPC Invoke(update_status)\ntrip_id, driver_id tu JWT, status

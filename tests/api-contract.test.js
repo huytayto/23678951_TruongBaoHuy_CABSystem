@@ -5,6 +5,56 @@ const path = require('node:path');
 const YAML = require('yaml');
 
 const specificationDirectory = path.resolve(__dirname, '../API-Specifications');
+const { canonicalApiUrl } = require('../shared/api-paths');
+const { normalizeInput } = require('../shared/request-input');
+
+test('short input fields preserve types and reject conflicting canonical values', () => {
+  assert.deepEqual(normalizeInput({ user: 'kh1', pass: '', from_lat: 22, from_lng: 111, to_lat: 22.01, to_lng: 111.01 }),
+    { username: 'kh1', password: '', pickup_lat: 22, pickup_lng: 111, dropoff_lat: 22.01, dropoff_lng: 111.01 });
+  assert.deepEqual(normalizeInput({ license: 'L6', plate: 'P6', lat: 22, lng: 111, trip: 'T1' }),
+    { license_number: 'L6', plate_number: 'P6', latitude: 22, longitude: 111, trip_id: 'T1' });
+  assert.throws(() => normalizeInput({ user: 'kh1', username: 'ad' }), /conflicting/);
+  assert.throws(() => normalizeInput({ lat: 0, latitude: 22 }), /conflicting/);
+  assert.deepEqual(normalizeInput({ pass: '', password: '' }), { password: '' });
+  assert.deepEqual(normalizeInput({ username: 'kh1', password: 'customerpassword' }), { username: 'kh1', password: 'customerpassword' });
+});
+
+test('short trip statuses are scoped to trip status requests and still obey transitions', () => {
+  const { isValidTripTransition } = require('../services/domain-rules');
+  const states = ['start', 'done'].map(status => normalizeInput({ status }, true).status);
+  assert.deepEqual(states, ['IN_PROGRESS', 'COMPLETED']);
+  let current = 'DRIVER_ASSIGNED';
+  for (const state of states) { assert.equal(isValidTripTransition(current, state), true); current = state; }
+  assert.equal(isValidTripTransition('DRIVER_ASSIGNED', normalizeInput({ status: 'done' }, true).status), false);
+  assert.deepEqual(normalizeInput({ status: 'SUCCESS' }), { status: 'SUCCESS' });
+  assert.deepEqual(normalizeInput({ status: 'done' }), { status: 'done' });
+});
+
+test('short API aliases resolve auth, nested operations and queries without path collisions', () => {
+  const cases = {
+    '/api/register': '/api/v1/auth/register',
+    '/api/login': '/api/v1/auth/login',
+    '/api/logout': '/api/v1/auth/logout',
+    '/api/otp/verify': '/api/v1/auth/otp/verify',
+    '/api/drivers/pending?page=2': '/api/v1/admin/drivers?page=2',
+    '/api/drivers/D59/approve': '/api/v1/admin/drivers/D59/approve',
+    '/api/drivers/nearby?lat=22&lng=111&radius=1km': '/api/v1/drivers/nearby?lat=22&lng=111&radius=1km',
+    '/api/bookings/B74/trip': '/api/v1/bookings/B74/trip',
+    '/api/trips/T1/status': '/api/v1/trips/T1/status',
+    '/api/payments/P1/callback': '/api/v1/demo/payments/P1/callback',
+    '/api/payments/online': '/api/v1/payments/online',
+    '/api/notifications/me': '/api/v1/notifications/me',
+    '/api/services': '/health/services',
+    '/api/health': '/health',
+    '/api/ready': '/ready',
+    '/api/register-extra': '/api/register-extra',
+    '/api/driversXYZ': '/api/driversXYZ',
+    '/api/v1/auth/login': '/api/v1/auth/login',
+  };
+  for (const [alias, canonical] of Object.entries(cases)) {
+    assert.equal(canonicalApiUrl(alias), canonical, alias);
+  }
+});
 
 test('all API specification YAML files parse as OpenAPI 3.0.3', () => {
   const files = fs.readdirSync(specificationDirectory).filter((name) => name.endsWith('.yaml'));

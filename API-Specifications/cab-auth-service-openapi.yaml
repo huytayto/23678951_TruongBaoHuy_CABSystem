@@ -13,17 +13,29 @@ paths:
           application/json:
             schema:
               type: object
-              required: [username, password, role]
+              required:
+                - username
+                - password
+                - role
               properties:
-                username: {type: string, example: "0901234567"}
-                password: {type: string, example: "Password@123"}
-                role: {type: string, enum: [CUSTOMER, DRIVER], example: "CUSTOMER"}
+                username:
+                  type: string
+                  example: "0901234567"
+                password:
+                  type: string
+                  example: Password@123
+                role:
+                  type: string
+                  enum:
+                    - CUSTOMER
+                    - DRIVER
+                  example: CUSTOMER
       responses:
-        '201':
+        "201":
           description: User registered successfully
-        '400':
+        "400":
           description: Validation error or SQLi detected
-        '409':
+        "409":
           description: Username already exists
   /api/v1/auth/login:
     post:
@@ -34,14 +46,20 @@ paths:
           application/json:
             schema:
               type: object
-              required: [username, password]
+              required:
+                - username
+                - password
               properties:
-                username: {type: string, example: "0901234567"}
-                password: {type: string, example: "Password@123"}
+                username:
+                  type: string
+                  example: "0901234567"
+                password:
+                  type: string
+                  example: Password@123
       responses:
-        '200':
+        "200":
           description: Authentication successful, JWT issued
-        '401':
+        "401":
           description: Invalid credentials
   /api/v1/auth/logout:
     post:
@@ -49,5 +67,5 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Logged out successfully

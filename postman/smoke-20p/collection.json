@@ -1,0 +1,1096 @@
+{
+  "info": {
+    "_postman_id": "68689e49-129d-4ce4-933b-a7f2e6ca0020",
+    "name": "CAB - Demo 20 phút - API nghiệp vụ",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "23 request chính dùng API nghiệp vụ đã có. Scripts phụ dùng pm.sendRequest qua cùng Gateway, không endpoint điều phối. Chỉ OTP và provider được mô phỏng. Mục 24 kèm lệnh DB; mục 29 ngưỡng demo 20/10s, không chứng minh 1000/s.\n\n| STT | Request | Giây |\n|---|---|---:|\n| 6 | 06 - API health check | 25 |\n| 9 | 09 - Đăng ký tài khoản khách hàng | 25 |\n| 10 | 10 - Đăng nhập khách hàng | 30 |\n| 11 | 11 - Lấy thông tin khách hàng với mã số | 15 |\n| 12 | 12 - Lấy thông tin tài xế với mã số | 15 |\n| 13 | 13 - Liệt kê danh sách tài xế tại khu vực | 25 |\n| 14 | 14 - Liệt kê danh sách các booking của Customer | 25 |\n| 15 | 15 - Đặt xe | 30 |\n| 16 | 16 - Tài xế nhận chuyến | 35 |\n| 17 | 17 - Cập nhật trạng thái chuyến | 25 |\n| 18 | 18 - Hủy chuyến | 30 |\n| 19 | 19 - Thanh toán online | 40 |\n| 20 | 20 - Đánh giá chuyến đi | 20 |\n| 21 | 21 - Đăng ký tài xế | 40 |\n| 22 | 22 - Duyệt hồ sơ tài xế | 25 |\n| 23 | 23 - Bật/tắt trạng thái nhận chuyến | 20 |\n| 24 | 24 - Data encryption at rest | 40 |\n| 25 | 25 - SQL injection attempt | 20 |\n| 26 | 26 - XSS input test | 25 |\n| 27 | 27 - JWT tampering | 20 |\n| 28 | 28 - Unauthorized API access | 20 |\n| 29 | 29 - Rate limit attack | 40 |\n| 30 | 30 - Replay attack (idempotency) | 30 |\n\nPostman 620s + trình bày 210s = 830s; dự phòng 370s. Đây là ngân sách thao tác, không tự đảm bảo điểm của giảng viên."
+  },
+  "variable": [
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customer_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "booking_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ride_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cancel_ride_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_response",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_driver_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_driver_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Thực hành 1",
+      "item": [
+        {
+          "name": "06 - API health check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/services",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Tiêu chí: API health check\nLàm gì: Send kiểm tra health; Tests kiểm tra /health, /ready và đăng nhập hai tài khoản seed.\nKết quả mong đợi: Đủ service UP; token được lưu tự động.\nNói với giảng viên: Seed được nạp trước giờ chấm, không đổi API health thành API chuẩn bị dữ liệu.   (~25s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.status === \"UP\");\n\nawait api('GET','/api/health'); await api('GET','/api/ready');\nconst a=await api('POST','/api/login',null,{user:\"ad\",pass:\"adminpassword\"});\nconst r=await api('POST','/api/login',null,{user:\"tx1\",pass:\"driverpassword\"});\nsave('admin_token',a.token);save('driver_token',r.token);save('driver_id',r.uid);\nconst driver=await api('GET','/api/drivers/me',r.token);save('driver_id',driver.driver.uid);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09 - Đăng ký tài khoản khách hàng",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Tiêu chí: Đăng ký tài khoản khách hàng\nLàm gì: Send tạo customer mới qua API đăng ký.\nKết quả mong đợi: Tạo tài khoản, chuẩn bị đăng nhập cùng tài khoản ở bước 10.\nNói với giảng viên: Đây là endpoint đăng ký nghiệp vụ thật.   (~25s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user\":\"kh5\",\"fullname\":\"An\",\"pass\":\"customerpassword\",\"role\":\"CUSTOMER\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 201',()=>pm.expect(pm.response.code).to.eql(201));\nverify('Kết quả',d.role === \"CUSTOMER\");\nsave('customer_id',d.uid);save('username',d.username);",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10 - Đăng nhập khách hàng",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Tiêu chí: Đăng nhập khách hàng\nLàm gì: Send đăng nhập; Tests tự chuẩn bị 5 booking mẫu qua API tạo/hủy.\nKết quả mong đợi: Có JWT đúng customer, 5 booking để kiểm tra phân trang.\nNói với giảng viên: Không đổi API login; các thao tác chuẩn bị chạy bằng pm.sendRequest.   (~30s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user\":\"{{username}}\",\"pass\":\"customerpassword\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.role === \"CUSTOMER\" && !!d.token);\n\nsave('token',d.token);\nconst profile=await api('GET','/api/customers/me',d.token);save('customer_id',profile.customer.uid);\nfor(let i=0;i<5;i++){const b=await api('POST','/api/bookings',d.token,{\"from_lat\":22,\"from_lng\":111,\"to_lat\":22.01,\"to_lng\":111.01},201);await api('POST','/api/bookings/'+b.booking.booking_id+'/cancel',d.token,{reason:'Mau'});}\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11 - Lấy thông tin khách hàng với mã số",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/customers/{{customer_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Lấy thông tin khách hàng với mã số\nLàm gì: Send xem hồ sơ customer đã đăng nhập.\nKết quả mong đợi: Trả đúng mã customer.\nNói với giảng viên: Quyền sở hữu vẫn kiểm tra bằng JWT.   (~15s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.customer.uid === v(\"customer_id\"));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12 - Lấy thông tin tài xế với mã số",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/drivers/{{driver_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Lấy thông tin tài xế với mã số\nLàm gì: Send bằng token Admin có sẵn.\nKết quả mong đợi: Đúng hồ sơ tài xế đã duyệt.\nNói với giảng viên: Không copy token hoặc mã tài xế bằng tay.   (~15s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.driver.approval_status === \"ACTIVE\");\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13 - Liệt kê danh sách tài xế tại khu vực",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/drivers/nearby?lat=22&lng=111&radius=1km&limit=5&page=1",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Liệt kê danh sách tài xế tại khu vực\nLàm gì: Send xem đủ 5 driver; Tests kiểm tra thêm phân trang limit 2.\nKết quả mong đợi: Đủ 5 tài xế khác trạng thái trong 1km quanh lat=22,lng=111.\nNói với giảng viên: Danh sách gồm vị trí cuối của tài xế; ghép chuyến chỉ chọn ACTIVE/AVAILABLE qua Redis Geo.   (~25s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.drivers.length === 5 && d.pagination.total === 5 && d.drivers.every(x=>x.distance_meters<=1000));\n\nconst p1=await api('GET','/api/drivers/nearby?lat=22&lng=111&radius=1km&limit=2&page=1',v('admin_token'));\nconst p2=await api('GET','/api/drivers/nearby?lat=22&lng=111&radius=1km&limit=2&page=2',v('admin_token'));\nverify('Paging',p1.drivers.length===2 && p2.drivers.length===2 && p2.drivers.every(b=>!p1.drivers.some(a=>a.uid===b.uid)));\nverify('Mixed states',new Set(d.drivers.map(x=>x.approval_status)).size>=3 && new Set(d.drivers.map(x=>x.availability)).size>=2);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14 - Liệt kê danh sách các booking của Customer",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/bookings?limit=2&page=1",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Liệt kê danh sách các booking của Customer\nLàm gì: Send trang 1; Tests lấy trang 2 qua API list booking.\nKết quả mong đợi: Có ít nhất 5 booking, limit và paging không lặp.\nNói với giảng viên: Các bản ghi mẫu được tạo bằng API ở bước 10.   (~25s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.bookings.length === 2);\n\nconst p=await api('GET','/api/bookings?limit=2&page=2',v('token'));\nverify('Phân trang đúng customer',p.bookings.length===2 && p.bookings.every(b=>b.customer_id===v('customer_id') && !d.bookings.some(a=>a.booking_id===b.booking_id)));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15 - Đặt xe",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/bookings",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Đặt xe\nLàm gì: Send tạo booking mới, tự lưu booking_id.\nKết quả mong đợi: SEARCHING_DRIVER và gửi offer.\nNói với giảng viên: Điểm đón cố định; offer local 10 phút để đủ thao tác.   (~30s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from_lat\":22,\"from_lng\":111,\"to_lat\":22.01,\"to_lng\":111.01}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 201',()=>pm.expect(pm.response.code).to.eql(201));\nverify('Kết quả',d.booking.status === \"SEARCHING_DRIVER\");\nsave('booking_id',d.booking.booking_id);",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16 - Tài xế nhận chuyến",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/bookings/{{booking_id}}/accept",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Tài xế nhận chuyến\nLàm gì: Send nhận chuyến; script kiểm tra offer và thông tin customer nhận được.\nKết quả mong đợi: Trip gán tài xế; customer có DriverAssigned.\nNói với giảng viên: URL accept nghiệp vụ; script phụ cũng đi qua Gateway.   (~35s)"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const offers=await api('GET','/api/drivers/offers',v('driver_token'));verify('Offer thuộc tài xế',offers.offers.some(b=>b.booking_id===v('booking_id')));",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.trip.status === \"DRIVER_ASSIGNED\");\n\nsave('ride_id',d.trip.trip_id);\nconst detail=await api('GET','/api/bookings/'+v('booking_id')+'/trip',v('token'));\nawait inbox(v('token'),'DriverAssigned',d.trip.trip_id);verify('Customer nhận đúng tài xế',detail.driver.uid===v('driver_id'));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17 - Cập nhật trạng thái chuyến",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/trips/{{ride_id}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Cập nhật trạng thái chuyến\nLàm gì: Pre-request gửi start và vị trí; request chính gửi done.\nKết quả mong đợi: DRIVER_ASSIGNED → IN_PROGRESS → COMPLETED, không được bỏ qua start.\nNói với giảng viên: Chỉ hai lần đổi trạng thái, thêm một lần cập nhật vị trí khi đang chạy.   (~25s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"status\":\"done\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "\nawait api('PATCH','/api/trips/'+v('ride_id')+'/status',v('driver_token'),{status:'start'});\nawait api('PATCH','/api/trips/'+v('ride_id')+'/location',v('driver_token'),{lat:22.01,lng:111.01});\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.trip.status === \"COMPLETED\");\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "18 - Hủy chuyến",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/trips/{{cancel_ride_id}}/cancel",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Hủy chuyến\nLàm gì: Pre-request tạo chuyến riêng bằng API đặt/nhận; Send hủy chuyến đó.\nKết quả mong đợi: CANCELED, có lý do và thông báo hai bên.\nNói với giảng viên: Không hủy chuyến đã COMPLETED; không dùng endpoint điều phối.   (~30s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"reason\":\"Ban\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "\nconst b=await api('POST','/api/bookings',v('token'),{\"from_lat\":22,\"from_lng\":111,\"to_lat\":22.01,\"to_lng\":111.01},201);\nconst t=await api('POST','/api/bookings/'+b.booking.booking_id+'/accept',v('driver_token'));\nsave('cancel_ride_id',t.trip.trip_id);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.trip.status === \"CANCELED\");\n\nawait inbox(v('token'),'TripCanceled',v('cancel_ride_id'));await inbox(v('driver_token'),'TripCanceled',v('cancel_ride_id'));\nverify('Lưu lý do hủy',d.trip.cancel_reason==='Ban');\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "19 - Thanh toán online",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/payments/online",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay1"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Thanh toán online\nLàm gì: Send tạo PENDING; Tests gọi callback mô phỏng và đọc lại trip.\nKết quả mong đợi: Request online PENDING; callback COMPLETED; trip PAID.\nNói với giảng viên: Chỉ provider là mock ở API demo đã có; không đổi URL payment online.   (~40s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"trip\":\"{{ride_id}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.payment.status === \"PENDING\");\n\nsave('payment_id',d.payment.payment_id);save('payment_response',JSON.stringify(d));\nconst callback=await api('POST','/api/payments/'+d.payment.payment_id+'/callback',v('admin_token'),{status:'SUCCESS'});\nconst trip=await api('GET','/api/trips/'+v('ride_id'),v('token'));\nverify('Callback COMPLETED và trip PAID',callback.payment.status==='COMPLETED' && trip.trip.payment_status==='PAID');\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "20 - Đánh giá chuyến đi",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/trips/{{ride_id}}/rating",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Đánh giá chuyến đi\nLàm gì: Send đánh giá chuyến đã hoàn tất.\nKết quả mong đợi: Rating 5 sao liên kết đúng trip.\nNói với giảng viên: API rating thật, mỗi chuyến chỉ được đánh giá một lần.   (~20s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"stars\":5,\"comment\":\"Tot\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 201',()=>pm.expect(pm.response.code).to.eql(201));\nverify('Kết quả',d.rating.stars === 5 && d.rating.trip_id === v(\"ride_id\"));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Thực hành 2",
+      "item": [
+        {
+          "name": "21 - Đăng ký tài xế",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/drivers/register",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{new_driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Đăng ký tài xế\nLàm gì: Pre-request đăng ký/login/OTP; Send gửi hồ sơ qua API drivers/register.\nKết quả mong đợi: Hồ sơ PENDING_APPROVAL, điện thoại đã xác thực.\nNói với giảng viên: OTP: response.code chỉ trong local; không đổi endpoint đăng ký tài xế.   (~40s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"license\":\"L11\",\"plate\":\"P11\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "\nconst u=await api('POST','/api/register',null,{user:'tx11',pass:\"driverpassword\",role:'DRIVER'},201);\nconst login=await api('POST','/api/login',null,{user:u.username,pass:\"driverpassword\"});save('new_driver_token',login.token);\nconst otp = await api('POST','/api/otp/request',login.token,{phone:'0901234567'},201);\nawait api('POST','/api/otp/verify',login.token,{code:otp.code});\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 201',()=>pm.expect(pm.response.code).to.eql(201));\nverify('Kết quả',d.driver.approval_status === \"PENDING_APPROVAL\" && d.driver.phone_verified);\nsave('new_driver_id',d.driver.uid);",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "22 - Duyệt hồ sơ tài xế",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/drivers/{{new_driver_id}}/approve",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Duyệt hồ sơ tài xế\nLàm gì: Script xem pending/chi tiết; Send duyệt bằng API Admin.\nKết quả mong đợi: Driver ACTIVE và nhận kết quả.\nNói với giảng viên: Đúng PATCH endpoint approve; JWT Admin được kiểm tra.   (~25s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"approve\":true}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "\nawait api('GET','/api/drivers/pending?limit=100&page=1',v('admin_token'));\nawait api('GET','/api/drivers/'+v('new_driver_id'),v('admin_token'));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.driver.approval_status === \"ACTIVE\");\nawait inbox(v('new_driver_token'),'DriverApprovalChanged',v('new_driver_id'));",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "23 - Bật/tắt trạng thái nhận chuyến",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/drivers/availability",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{new_driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Bật/tắt trạng thái nhận chuyến\nLàm gì: Send bật AVAILABLE; Tests gửi cùng API để tắt OFFLINE.\nKết quả mong đợi: Hai trạng thái được cập nhật thật vào DB/Redis.\nNói với giảng viên: Không đổi token/body bằng tay, xem cả hai kết quả trong Tests.   (~20s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"online\":true,\"lat\":22.02,\"lng\":111}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.driver.availability === \"AVAILABLE\");\n\nconst off=await api('PATCH','/api/drivers/availability',v('new_driver_token'),{online:false});verify('Tắt nhận chuyến',off.driver.availability==='OFFLINE');\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Thực hành 3",
+      "item": [
+        {
+          "name": "24 - Data encryption at rest",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/customers/{{customer_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Data encryption at rest\nLàm gì: Send xem hồ sơ; chạy npm.cmd run demo:at-rest để kiểm tra DB.\nKết quả mong đợi: DB lưu bcrypt/AES-GCM; key được inject từ environment.\nNói với giảng viên: GET profile trả dữ liệu đã giải mã, không tự chứng minh at rest; lệnh DB là bằng chứng.   (~40s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.customer.uid === v(\"customer_id\"));\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "25 - SQL injection attempt",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Tiêu chí: SQL injection attempt\nLàm gì: Send payload SQL injection có sẵn.\nKết quả mong đợi: 401, không token hay dữ liệu DB.\nNói với giảng viên: Truy vấn parameterized của API login thật.   (~20s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user\":\"' OR 1=1 --\",\"pass\":\"anything\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 401',()=>pm.expect(pm.response.code).to.eql(401));\nverify('Kết quả',!d.token);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "26 - XSS input test",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/customers/{{customer_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: XSS input test\nLàm gì: Send script vào fullname.\nKết quả mong đợi: Output escape, không trả thẻ script thô.\nNói với giảng viên: Đây là API cập nhật profile nghiệp vụ.   (~25s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"fullname\":\"<script>alert('hack')</script>\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.customer.fullname === \"&lt;script&gt;alert(&#x27;hack&#x27;)&lt;/script&gt;\");\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "27 - JWT tampering",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/drivers/pending",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbl8wMDEiLCJyb2xlIjoiQURNSU4iLCJpc3MiOiJjYWItYXV0aCIsImV4cCI6NDEwMjQ0NDgwMH0.dGFtcGVyZWQtc2lnbmF0dXJl",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: JWT tampering\nLàm gì: Send token đã sửa sub/role, signature sai có sẵn.\nKết quả mong đợi: 401, không truy cập Admin.\nNói với giảng viên: Token âm tính hardcode; verify signature chạy thật.   (~20s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 401',()=>pm.expect(pm.response.code).to.eql(401));\nverify('Kết quả',!d.drivers);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "28 - Unauthorized API access",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/drivers/{{driver_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Unauthorized API access\nLàm gì: Send bằng token Customer.\nKết quả mong đợi: 403 Forbidden, không lộ driver.\nNói với giảng viên: Không thay token để làm đẹp kết quả.   (~20s)"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 403',()=>pm.expect(pm.response.code).to.eql(403));\nverify('Kết quả',!d.driver);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "29 - Rate limit attack",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/bookings",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Limit",
+                "value": "1"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Rate limit attack\nLàm gì: Send body invalid; Tests gửi thêm 30 POST cùng URL với header demo.\nKết quả mong đợi: Có 429 thật sau 20 request/10s; không tạo booking rác.\nNói với giảng viên: Ngưỡng local riêng, không chứng minh tải 1000/s. Header demo không hoạt động khi tắt SMOKE_MODE.   (~40s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"from_lat\":999,\"from_lng\":999}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "\nverify('HTTP 400 hoặc 429 thật',[400,429].includes(pm.response.code));let blocked=pm.response.code===429?1:0;\nawait Promise.all(Array.from({length:30},()=>new Promise((resolve,reject)=>pm.sendRequest({url:pm.environment.get('base_url')+'/api/bookings',method:'POST',header:{'Content-Type':'application/json',Authorization:'Bearer '+v('token'),'Limit':'1'},body:{mode:'raw',raw:'{\"from_lat\":999,\"from_lng\":999}'}},(e,r)=>{if(e)return reject(e);if(![400,429].includes(r.code))return reject(new Error('Unexpected HTTP '+r.code));if(r.code===429)blocked++;resolve();}))));\nverify('Nhận 429 khi vượt ngưỡng demo',blocked>0);\n",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "30 - Replay attack (idempotency)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/payments/online",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "pay1"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Tiêu chí: Replay attack (idempotency)\nLàm gì: Send hai lần cùng body và key có sẵn.\nKết quả mong đợi: Cùng payment_id và đúng response gốc.\nNói với giảng viên: Snapshot gốc PENDING khác trạng thái hiện tại đã settlement; không tạo payment mới.   (~30s)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"trip\":\"{{ride_id}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "(async()=>{",
+                  "\nconst v=k=>pm.collectionVariables.get(k), save=(k,x)=>pm.collectionVariables.set(k,x);\nconst api=(method,url,token,body,status=200)=>new Promise((resolve,reject)=>pm.sendRequest({method,url:pm.environment.get('base_url')+url,header:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:{mode:'raw',raw:JSON.stringify(body)}}:{})},(e,r)=>e?reject(e):r.code!==status?reject(new Error(method+' '+url+': HTTP '+r.code)):resolve(r.json())));\nconst verify=(name,ok)=>pm.test(name,()=>pm.expect(Boolean(ok)).to.eql(true));\nasync function inbox(token,type,id){for(let i=0;i<30;i++){const r=await api('GET','/api/notifications/me?limit=200',token);if(r.notifications.some(n=>n.payload.event_type===type && n.payload.aggregate_id===id))return true;await new Promise(r=>setTimeout(r,150));}throw new Error('Không nhận '+type);}\n",
+                  "const d=pm.response.json(); pm.test('HTTP 200',()=>pm.expect(pm.response.code).to.eql(200));\nverify('Kết quả',d.payment.payment_id === v(\"payment_id\"));\npm.test('Response cũ, không double charge',()=>pm.expect(d).to.eql(JSON.parse(v('payment_response'))));",
+                  "})().catch(e=>pm.test('Các bước API phụ thành công',()=>{throw e;}));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ghi chú ngoài Postman",
+      "description": "1 (30s): mở source và sơ đồ.\n2 (30s): GitHub .gitignore/.env.\n3 (30s): Gateway JWT/RBAC/routing.\n4 (30s): gRPC và Kafka.\n5 (30s): docker compose ps.\n7 (30s): Kafka UI localhost:8081.\n8 (30s): gRPC ports không publish, request đi qua Gateway.\nTổng 210s. Các phần trình bày cần người chấm đánh giá.",
+      "item": []
+    }
+  ]
+}

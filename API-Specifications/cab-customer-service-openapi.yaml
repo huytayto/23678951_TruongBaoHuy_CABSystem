@@ -10,9 +10,9 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Profile retrieved
-        '401':
+        "401":
           description: Unauthorized
   /api/v1/customers/{id}:
     get:
@@ -20,16 +20,16 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Customer details
-        '403':
+        "403":
           description: Forbidden
     delete:
       summary: Delete customer profile (Admin only)
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Customer deleted
-        '403':
+        "403":
           description: Forbidden (Non-admin)

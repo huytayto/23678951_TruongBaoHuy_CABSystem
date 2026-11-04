@@ -17,13 +17,15 @@ const {
   isValidTripTransition,
 } = require('./domain-rules');
 const { decryptField, encryptField, loadEncryptionKey, lookupHash } = require('./data-encryption');
-const { ensurePublicCodes, isPublicCode, resolvePublicCode } = require('./public-codes');
+const { ensureIdSequences, nextId, syncIdSequences } = require('./entity-ids');
+const smoke = require('./smoke-fixtures');
+const smokeMode = process.env.SMOKE_MODE === 'true';
 
 const context = process.env.SERVICE_CONTEXT;
 const port = Number(process.env.GRPC_PORT);
 const jwtSecret = process.env.JWT_SECRET;
 const fareAmount = Number(process.env.FIXED_FARE_AMOUNT || 50000);
-const offerTtlSeconds = Math.min(Math.max(Math.trunc(Number(process.env.OFFER_TTL_SECONDS)) || 15, 5), 600);
+const offerTtlSeconds = smokeMode ? 600 : Math.min(Math.max(Math.trunc(Number(process.env.OFFER_TTL_SECONDS)) || 15, 5), 600);
 const protoPath = path.resolve(__dirname, '../shared/proto/cab-domain.proto');
 const defaultPorts = {
   auth: 50051,
@@ -44,7 +46,7 @@ const eventTopics = [
 const tables = {
   auth: `
     CREATE TABLE IF NOT EXISTS users (
-      uid UUID PRIMARY KEY,
+      uid TEXT PRIMARY KEY,
       username VARCHAR(100) UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role VARCHAR(20) NOT NULL CHECK (role IN ('CUSTOMER', 'DRIVER', 'ADMIN')),
@@ -53,7 +55,7 @@ const tables = {
     )`,
   customer: `
     CREATE TABLE IF NOT EXISTS customers (
-      uid UUID PRIMARY KEY,
+      uid TEXT PRIMARY KEY,
       fullname TEXT NOT NULL,
       age INTEGER CHECK (age IS NULL OR age BETWEEN 0 AND 120),
       address TEXT NOT NULL,
@@ -61,7 +63,7 @@ const tables = {
     )`,
   driver: `
     CREATE TABLE IF NOT EXISTS drivers (
-      uid UUID PRIMARY KEY,
+      uid TEXT PRIMARY KEY,
       license_number TEXT NOT NULL,
       plate_number TEXT NOT NULL,
       license_lookup_hash CHAR(64) UNIQUE NOT NULL,
@@ -78,41 +80,41 @@ const tables = {
     ALTER TABLE drivers ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT false`,
   booking: `
     CREATE TABLE IF NOT EXISTS bookings (
-      booking_id UUID PRIMARY KEY,
-      customer_id UUID NOT NULL,
+      booking_id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
       pickup_lat DOUBLE PRECISION NOT NULL,
       pickup_lng DOUBLE PRECISION NOT NULL,
       dropoff_lat DOUBLE PRECISION NOT NULL,
       dropoff_lng DOUBLE PRECISION NOT NULL,
       vehicle_type VARCHAR(40) NOT NULL,
       status VARCHAR(30) NOT NULL,
-      offered_driver_uid UUID,
-      candidate_driver_uids UUID[] NOT NULL DEFAULT '{}',
+      offered_driver_uid TEXT,
+      candidate_driver_uids TEXT[] NOT NULL DEFAULT '{}',
       offered_index INTEGER NOT NULL DEFAULT 0,
-      assigned_driver_uid UUID,
+      assigned_driver_uid TEXT,
       cancel_reason TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       offered_at TIMESTAMPTZ
     );
-    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS candidate_driver_uids UUID[] NOT NULL DEFAULT '{}';
+    ALTER TABLE bookings ADD COLUMN IF NOT EXISTS candidate_driver_uids TEXT[] NOT NULL DEFAULT '{}';
     ALTER TABLE bookings ADD COLUMN IF NOT EXISTS offered_index INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE bookings ADD COLUMN IF NOT EXISTS offered_at TIMESTAMPTZ`,
   trip: `
     CREATE TABLE IF NOT EXISTS trips (
-      trip_id UUID PRIMARY KEY,
-      booking_id UUID UNIQUE NOT NULL,
-      customer_id UUID NOT NULL,
-      driver_id UUID NOT NULL,
+      trip_id TEXT PRIMARY KEY,
+      booking_id TEXT UNIQUE NOT NULL,
+      customer_id TEXT NOT NULL,
+      driver_id TEXT NOT NULL,
       status VARCHAR(30) NOT NULL,
       fare_amount NUMERIC(12,2) NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS ratings (
-      rating_id UUID PRIMARY KEY,
-      trip_id UUID UNIQUE NOT NULL REFERENCES trips(trip_id),
-      customer_id UUID NOT NULL,
+      rating_id TEXT PRIMARY KEY,
+      trip_id TEXT UNIQUE NOT NULL REFERENCES trips(trip_id),
+      customer_id TEXT NOT NULL,
       stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
       comment TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -121,12 +123,12 @@ const tables = {
     ALTER TABLE trips ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE trips ADD COLUMN IF NOT EXISTS cancel_reason TEXT;
     ALTER TABLE trips ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'UNPAID';
-    ALTER TABLE trips ADD COLUMN IF NOT EXISTS payment_id UUID`,
+    ALTER TABLE trips ADD COLUMN IF NOT EXISTS payment_id TEXT`,
   payment: `
     CREATE TABLE IF NOT EXISTS payments (
-      payment_id UUID PRIMARY KEY,
-      trip_id UUID NOT NULL,
-      customer_id UUID,
+      payment_id TEXT PRIMARY KEY,
+      trip_id TEXT NOT NULL,
+      customer_id TEXT,
       payment_method VARCHAR(30) NOT NULL,
       status VARCHAR(20) NOT NULL,
       amount NUMERIC(12,2) NOT NULL,
@@ -253,56 +255,19 @@ async function publish(topic, event) {
 }
 
 async function ensureDatabase() {
-  for (const statement of tables[context].split(';').map((part) => part.trim()).filter(Boolean)) {
-    await pool.query(statement);
-  }
-  await ensurePublicCodes(pool, context);
-  if (context === 'auth' && process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
-    const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
-    await pool.query(
-      `INSERT INTO users (uid, username, password_hash, role)
-       VALUES ($1, $2, $3, 'ADMIN')
-       ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'ADMIN'`,
-      [crypto.randomUUID(), process.env.ADMIN_USERNAME, passwordHash],
-    );
-  }
-  if (context === 'auth' && process.env.SEED_DEMO_PASSWORD) {
-    if (process.env.SEED_DEMO_PASSWORD.length < 12) throw new Error('SEED_DEMO_PASSWORD must be at least 12 characters');
-    const hash = await bcrypt.hash(process.env.SEED_DEMO_PASSWORD, 12);
-    for (let index = 1; index <= 5; index += 1) {
-      await pool.query(
-        `INSERT INTO users (uid, username, password_hash, role)
-         VALUES ($1, $2, $3, 'DRIVER')
-       ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
-        [`00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, `demo-driver-${index}`, hash],
-      );
-    }
-  }
-  if (context === 'driver' && process.env.SEED_DEMO_PASSWORD) {
-    for (let index = 1; index <= 5; index += 1) {
-      const uid = `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
-      const latitude = 10.776889 + (index * 0.00015);
-      const longitude = 106.700806 + (index * 0.00015);
-      const licenseNumber = `DEMO-LICENSE-${index}`;
-      const plateNumber = `DEMO-PLATE-${index}`;
-      await pool.query(
-        `INSERT INTO drivers
-          (uid, license_number, plate_number, license_lookup_hash, plate_lookup_hash,
-           approval_status, availability, latitude, longitude)
-         VALUES ($1, $2, $3, $4, $5, 'ACTIVE', 'AVAILABLE', $6, $7)
-         ON CONFLICT (uid) DO NOTHING`,
-        [
-          uid, encryptField(licenseNumber, dataEncryptionKey), encryptField(plateNumber, dataEncryptionKey),
-          lookupHash(licenseNumber, 'license', dataEncryptionKey),
-          lookupHash(plateNumber, 'plate', dataEncryptionKey), latitude, longitude,
-        ],
-      );
-      await redis.geoadd('cab:drivers:available', longitude, latitude, uid);
-    }
+  for (const statement of tables[context].split(';').map(part=>part.trim()).filter(Boolean)) await pool.query(statement);
+  await ensureIdSequences(pool,context,smokeMode);
+  if (process.env.SEED_DEMO_PASSWORD) throw new Error('Legacy seed is disabled; use SMOKE_MODE=true');
+  if (context==='auth' && process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
+    const hash=await bcrypt.hash(process.env.ADMIN_PASSWORD,12);
+    const prior=(await pool.query('SELECT uid FROM users WHERE username=$1',[process.env.ADMIN_USERNAME])).rows[0];
+    if(prior) await pool.query("UPDATE users SET password_hash=$2,role='ADMIN' WHERE uid=$1",[prior.uid,hash]);
+    else await pool.query("INSERT INTO users(uid,username,password_hash,role) VALUES($1,$2,$3,'ADMIN')",
+      [await nextId(pool,'admin'),process.env.ADMIN_USERNAME,hash]);
   }
 }
 
-async function getNearbyDrivers({ lat, lng, radius = 1000, limit = 20, page = 1 }) {
+async function getAvailableNearbyDrivers({ lat, lng, radius = 1000, limit = 20, page = 1 }) {
   const radiusMeters = Math.min(Math.max(Number(radius) || 1000, 1), 50000);
   const pageSize = Math.min(Math.max(Number(limit) || 20, 1), 100);
   const pageNumber = Math.max(Number(page) || 1, 1);
@@ -318,7 +283,7 @@ async function getNearbyDrivers({ lat, lng, radius = 1000, limit = 20, page = 1 
   const ids = slice.map((entry) => entry[0]);
   if (ids.length === 0) return { drivers: [], pagination: { page: pageNumber, limit: pageSize, total: results.length } };
   const rows = await pool.query(
-    `SELECT uid, code, vehicle_type, approval_status, availability FROM drivers WHERE uid = ANY($1::uuid[])`,
+    `SELECT uid, vehicle_type, approval_status, availability FROM drivers WHERE uid = ANY($1::text[])`,
     [ids],
   );
   const byId = new Map(rows.rows.map((row) => [row.uid, row]));
@@ -326,23 +291,109 @@ async function getNearbyDrivers({ lat, lng, radius = 1000, limit = 20, page = 1 
     .map(([uid, distance]) => {
       const row = byId.get(uid);
       return row && row.approval_status === 'ACTIVE' && row.availability === 'AVAILABLE'
-        ? { uid: row.uid, code: row.code, vehicle_type: row.vehicle_type, distance_meters: Number(distance) }
+        ? { uid: row.uid, vehicle_type: row.vehicle_type, distance_meters: Number(distance) }
         : null;
     })
     .filter(Boolean);
   return { drivers, pagination: { page: pageNumber, limit: pageSize, total: results.length } };
 }
 
+// Admin's area listing includes last-known positions regardless of approval/availability.
+// Dispatch keeps using the separate AVAILABLE Redis Geo index below.
+async function getNearbyDrivers({ lat, lng, radius = 1000, limit = 20, page = 1 }) {
+  const radiusMeters = Math.min(Math.max(Number(radius) || 1000, 1), 50000);
+  const pageSize = Math.min(Math.max(Math.trunc(Number(limit)) || 20, 1), 100);
+  const pageNumber = Math.max(Math.trunc(Number(page)) || 1, 1);
+  const result = await pool.query(`WITH nearby AS (
+    SELECT uid, vehicle_type,approval_status,availability,latitude,longitude,
+      12742000 * asin(sqrt(least(1.0,greatest(0.0,
+        power(sin(radians(latitude-$1::double precision)/2),2)
+        + cos(radians($1::double precision))*cos(radians(latitude))
+          *power(sin(radians(longitude-$2::double precision)/2),2)
+      )))) AS distance_meters
+    FROM drivers WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+  ), within_radius AS (SELECT * FROM nearby WHERE distance_meters <= $3)
+  SELECT (SELECT count(*)::int FROM within_radius) AS total,
+    (SELECT coalesce(json_agg(d),'[]'::json) FROM (
+      SELECT * FROM within_radius ORDER BY distance_meters,uid LIMIT $4 OFFSET $5
+    ) d) AS drivers`, [Number(lat),Number(lng),radiusMeters,pageSize,(pageNumber-1)*pageSize]);
+  return { drivers: result.rows[0].drivers,
+    pagination: { page: pageNumber, limit: pageSize, total: result.rows[0].total } };
+}
+
 async function invoke(action, payload) {
-  if (action === 'resolve_code') {
-    const reference = await resolvePublicCode(pool, context, payload.code);
-    return reference ? success(200, reference) : failure(404, 'Record code not found');
+  if (action.startsWith('smoke_') && !smokeMode) return failure(404, 'Local smoke mode is disabled');
+  if (action === 'smoke_seed') {
+    const resetFixtures = payload.reset !== false;
+    if (context === 'auth') {
+      const hashes = Object.fromEntries(await Promise.all(Object.entries(smoke.passwords)
+        .map(async ([role, password]) => [role, await bcrypt.hash(password, 12)])));
+      for (const user of [smoke.admin, ...smoke.customers, ...smoke.drivers]) {
+        await pool.query(`INSERT INTO users(uid,username,password_hash,role) VALUES($1,$2,$3,$4)
+          ON CONFLICT(uid) DO ${resetFixtures ? "UPDATE SET username=EXCLUDED.username,password_hash=EXCLUDED.password_hash,role=EXCLUDED.role,status='ACTIVE'" : 'NOTHING'}`,
+          [user.uid,user.username,hashes[user.role],user.role]);
+      }
+      await syncIdSequences(pool, 'auth', true);
+    } else if (context === 'customer') {
+      for (const customer of smoke.customers) await pool.query(`INSERT INTO customers(uid,fullname,address) VALUES($1,$2,$3)
+        ON CONFLICT(uid) DO ${resetFixtures ? 'UPDATE SET fullname=EXCLUDED.fullname,address=EXCLUDED.address,age=NULL' : 'NOTHING'}`,
+      [customer.uid, encryptField('An', dataEncryptionKey), encryptField('HN', dataEncryptionKey)]);
+    } else if (context === 'trip') {
+      if (resetFixtures) await pool.query(`UPDATE trips SET status='CANCELED',cancel_reason='Reset dedicated smoke fixtures'
+        WHERE driver_id=ANY($1::text[]) AND status NOT IN ('COMPLETED','CANCELED')`, [smoke.drivers.map(d => d.uid)]);
+    } else if (context === 'driver') {
+      for (const [i, driver] of smoke.drivers.entries()) {
+        const license = `L${i + 1}`, plate = `P${i + 1}`;
+        await pool.query(`INSERT INTO drivers(uid,license_number,plate_number,license_lookup_hash,plate_lookup_hash,
+          approval_status,availability,latitude,longitude,phone_verified) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
+          ON CONFLICT(uid) DO ${resetFixtures ? `UPDATE SET license_number=EXCLUDED.license_number,plate_number=EXCLUDED.plate_number,
+          license_lookup_hash=EXCLUDED.license_lookup_hash,plate_lookup_hash=EXCLUDED.plate_lookup_hash,
+          vehicle_type=EXCLUDED.vehicle_type,phone=NULL,phone_verified=true,
+          approval_status=EXCLUDED.approval_status,availability=EXCLUDED.availability,
+          latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude` : 'NOTHING'}`, [driver.uid,encryptField(license,dataEncryptionKey),
+          encryptField(plate,dataEncryptionKey),lookupHash(license,'license',dataEncryptionKey),lookupHash(plate,'plate',dataEncryptionKey),
+          driver.approval,driver.availability,driver.latitude,driver.longitude]);
+        const stored=(await pool.query('SELECT approval_status,availability,latitude,longitude FROM drivers WHERE uid=$1',[driver.uid])).rows[0];
+        if (stored.approval_status==='ACTIVE' && stored.availability==='AVAILABLE' && stored.latitude!==null && stored.longitude!==null)
+          await redis.geoadd('cab:drivers:available',stored.longitude,stored.latitude,driver.uid);
+        else await redis.zrem('cab:drivers:available',driver.uid);
+      }
+    } else if (context === 'booking') {
+      const customerId = payload.customer_id || smoke.customer.uid;
+      const count = await pool.query('SELECT count(*)::int AS count FROM bookings WHERE customer_id=$1',[customerId]);
+      for (let i = count.rows[0].count; i < 5; i++) await pool.query(`INSERT INTO bookings
+        (booking_id,customer_id,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,vehicle_type,status,cancel_reason)
+        VALUES($1,$2,$3,$4,$5,$6,'CAB_4_SEAT','CANCELED','Seed for pagination')`,
+        [await nextId(pool,'booking'),customerId,smoke.latitude,smoke.longitude,smoke.latitude+0.01,smoke.longitude+0.01]);
+      if (resetFixtures) await pool.query(`UPDATE bookings SET pickup_lat=$2,pickup_lng=$3,dropoff_lat=$4,dropoff_lng=$5
+        WHERE customer_id=$1 AND cancel_reason='Seed for pagination'`,
+        [customerId,smoke.latitude,smoke.longitude,smoke.latitude+0.01,smoke.longitude+0.01]);
+      if (resetFixtures) await pool.query(`UPDATE bookings SET status='CANCELED' WHERE assigned_driver_uid=ANY($1::text[])
+        AND status NOT IN ('COMPLETED','CANCELED')`,[smoke.drivers.map(d=>d.uid)]);
+    }
+    return success(200, { seeded: true });
   }
+  if (action === 'smoke_encryption') {
+    if (context === 'auth') {
+      const result = await pool.query('SELECT password_hash FROM users WHERE uid=$1',[payload.uid]);
+      return success(200,{ password_hashed: !!result.rows[0] && /^\$2[aby]\$12\$/.test(result.rows[0].password_hash), algorithm:'bcrypt, cost 12' });
+    }
+    if (context === 'customer') {
+      const result = await pool.query('SELECT fullname,address FROM customers WHERE uid=$1',[payload.uid]);
+      const row = result.rows[0];
+      const encrypted = !!row && [row.fullname,row.address].every(v=>v.startsWith('enc:v1:'));
+      if (encrypted) { decryptField(row.fullname,dataEncryptionKey); decryptField(row.address,dataEncryptionKey); }
+      return success(200,{ fields_encrypted: encrypted, ciphertext_prefix: row?.fullname.slice(0,32),
+        algorithm:'AES-256-GCM', key_management:'Environment-injected 32-byte key; key is not returned' });
+    }
+    return failure(404,'No encryption evidence for this context');
+  }
+
   switch (context) {
     case 'auth': {
       if (action === 'health') return success(200, { context, status: 'UP' });
       if (action === 'otp_request') {
-        if (process.env.OTP_TEST_MODE !== 'true') return failure(503, 'Configure an SMS adapter or enable local OTP_TEST_MODE for demos');
+        if (process.env.OTP_TEST_MODE !== 'true' && !smokeMode) return failure(503, 'Configure an SMS adapter or enable local OTP_TEST_MODE for demos');
         if (!/^\+?[0-9]{9,15}$/.test(String(payload.phone || ''))) return failure(400, 'Valid phone number required');
         const cooldown = await redis.set(`cab:otp:cooldown:${payload.uid}`, '1', 'EX', 30, 'NX');
         if (!cooldown) return failure(429, 'Wait 30 seconds before requesting another OTP');
@@ -352,14 +403,14 @@ async function invoke(action, payload) {
         await redis.set(`cab:otp:${challengeId}`, JSON.stringify({
           uid: payload.uid, phone: payload.phone,
           digest: crypto.createHmac('sha256', jwtSecret).update(`${challengeId}:${code}`).digest('hex'),
-          local_code: process.env.OTP_TEST_MODE === 'true' ? encryptField(code, key) : null,
+          local_code: process.env.OTP_TEST_MODE === 'true' || smokeMode ? encryptField(code, key) : null,
         }), 'EX', 300);
         await redis.set(`cab:otp:current:${payload.uid}`, challengeId, 'EX', 300);
         // Local demo transport. A production SMS adapter must replace this mode.
-        return success(201, { challenge_id: challengeId, expires_in: 300, delivery: 'LOCAL_DEMO' });
+        return success(201, { challenge_id: challengeId, code, expires_in: 300, delivery: 'LOCAL_DEMO' });
       }
       if (action === 'otp_test_code') {
-        if (process.env.OTP_TEST_MODE !== 'true') return failure(404, 'Local OTP test inbox is disabled');
+        if (process.env.OTP_TEST_MODE !== 'true' && !smokeMode) return failure(404, 'Local OTP test inbox is disabled');
         const challengeId = payload.challenge_id || await redis.get(`cab:otp:current:${payload.uid}`);
         const record = await redis.get(`cab:otp:${challengeId}`);
         if (!record) return failure(404, 'OTP challenge not found or expired');
@@ -392,13 +443,13 @@ async function invoke(action, payload) {
       if (action === 'register') {
         const { username, password } = payload;
         const role = String(payload.role || 'CUSTOMER').toUpperCase();
-        if (!username || !password || !['CUSTOMER', 'DRIVER'].includes(role)) {
+        if (!username || !isValidPassword(password) || !['CUSTOMER', 'DRIVER'].includes(role)) {
           return failure(400, 'username, password, and role CUSTOMER or DRIVER are required');
         }
-        if (String(username).length > 100 || !isValidPassword(password)) {
-          return failure(400, 'Password must be 8-128 characters and contain upper/lowercase letters, a number, and a symbol');
+        if (String(username).length > 100) {
+          return failure(400, 'Username must not exceed 100 characters');
         }
-        const uid = crypto.randomUUID();
+        const uid = await nextId(pool,role.toLowerCase());
         const passwordHash = await bcrypt.hash(password, 12);
         try {
           await pool.query(
@@ -423,7 +474,7 @@ async function invoke(action, payload) {
       }
       if (action === 'login') {
         const { username, password } = payload;
-        if (!username || !password) return failure(400, 'username and password are required');
+        if (!username || !isValidPassword(password)) return failure(400, 'username and password are required');
         const result = await pool.query(
           `SELECT uid, username, password_hash, role, status FROM users WHERE username = $1`,
           [username],
@@ -458,7 +509,7 @@ async function invoke(action, payload) {
         try {
           const result = await pool.query(
           `INSERT INTO customers (uid, fullname, age, address)
-           VALUES ($1, $2, $3, $4) RETURNING uid, code, fullname, age, address`,
+           VALUES ($1, $2, $3, $4) RETURNING uid, fullname, age, address`,
             [
               uid, encryptField(fullname, dataEncryptionKey),
               age === undefined || age === null ? null : Number(age),
@@ -473,7 +524,7 @@ async function invoke(action, payload) {
       }
       if (action === 'get_profile') {
         const result = await pool.query(
-          `SELECT uid, code, fullname, age, address FROM customers WHERE uid = $1`,
+          `SELECT uid, fullname, age, address FROM customers WHERE uid = $1`,
           [payload.uid],
         );
         return result.rows[0] ? success(200, { customer: decryptCustomer(result.rows[0]) }) : failure(404, 'Customer not found');
@@ -482,7 +533,7 @@ async function invoke(action, payload) {
         const limit = Math.min(Math.max(Number(payload.limit) || 20, 1), 100);
         const page = Math.max(Number(payload.page) || 1, 1);
         const result = await pool.query(
-          `SELECT uid, code, fullname, age, address FROM customers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+          `SELECT uid, fullname, age, address FROM customers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
           [limit, (page - 1) * limit],
         );
         return success(200, { customers: result.rows.map(decryptCustomer), pagination: { page, limit } });
@@ -494,7 +545,7 @@ async function invoke(action, payload) {
         }
         const result = await pool.query(
           `UPDATE customers SET fullname = COALESCE($2, fullname), age = COALESCE($3, age),
-           address = COALESCE($4, address) WHERE uid = $1 RETURNING uid, code, fullname, age, address`,
+           address = COALESCE($4, address) WHERE uid = $1 RETURNING uid, fullname, age, address`,
           [
             payload.uid,
             payload.fullname === undefined ? null : encryptField(payload.fullname, dataEncryptionKey),
@@ -525,7 +576,7 @@ async function invoke(action, payload) {
             `INSERT INTO drivers
                (uid, license_number, plate_number, license_lookup_hash, plate_lookup_hash, vehicle_type, phone, phone_verified)
              VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-             RETURNING uid, code, license_number, plate_number, vehicle_type, approval_status, availability, phone, phone_verified`,
+             RETURNING uid, license_number, plate_number, vehicle_type, approval_status, availability, phone, phone_verified`,
             [
               uid, encryptField(license_number, dataEncryptionKey),
               encryptField(plate_number, dataEncryptionKey), licenseHash, plateHash, vehicle_type, encryptField(verification.phone, dataEncryptionKey),
@@ -541,15 +592,15 @@ async function invoke(action, payload) {
         const limit = Math.min(Math.max(Math.trunc(Number(payload.limit)) || 20, 1), 100);
         const page = Math.max(Math.trunc(Number(payload.page)) || 1, 1);
         const result = await pool.query(
-          `SELECT uid, code, vehicle_type, approval_status, availability, phone_verified FROM drivers
+          `SELECT uid, vehicle_type, approval_status, availability, phone_verified FROM drivers
            WHERE approval_status = 'PENDING_APPROVAL' ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [limit, (page - 1) * limit],
         );
         return success(200, { drivers: result.rows, pagination: { limit, page } });
       }
       if (action === 'get') {
         const columns = payload.role === 'ADMIN'
-          ? 'uid, code, license_number, plate_number, vehicle_type, approval_status, availability, latitude, longitude, phone_verified'
-          : 'uid, code, plate_number, vehicle_type, availability, approval_status, phone_verified';
+          ? 'uid, license_number, plate_number, vehicle_type, approval_status, availability, latitude, longitude, phone_verified'
+          : 'uid, plate_number, vehicle_type, availability, approval_status, phone_verified';
         const result = await pool.query(`SELECT ${columns} FROM drivers WHERE uid = $1`, [payload.uid]);
         if (payload.role === 'DRIVER' && payload.requester_id !== payload.uid) {
           return failure(403, 'Drivers may only view their own profile');
@@ -560,7 +611,7 @@ async function invoke(action, payload) {
         const result = await pool.query(
           `UPDATE drivers SET approval_status = $2, availability = 'OFFLINE'
            WHERE uid = $1 AND approval_status = 'PENDING_APPROVAL'
-           RETURNING uid, code, approval_status, availability`,
+           RETURNING uid, approval_status, availability`,
           [payload.uid, payload.approve === false ? 'REJECTED' : 'ACTIVE'],
         );
         if (!result.rows[0]) return failure(404, 'Pending driver profile not found');
@@ -574,9 +625,9 @@ async function invoke(action, payload) {
         const { latitude, longitude } = payload;
         if (online && !isValidCoordinates(latitude, longitude)) return failure(400, 'Valid latitude and longitude are required when going online');
         const result = await pool.query(
-          `UPDATE drivers SET availability = $2, latitude = $3, longitude = $4
+          `UPDATE drivers SET availability = $2, latitude = COALESCE($3,latitude), longitude = COALESCE($4,longitude)
            WHERE uid = $1 AND approval_status = 'ACTIVE' AND availability <> 'BUSY'
-           RETURNING uid, code, approval_status, availability, latitude, longitude`,
+           RETURNING uid, approval_status, availability, latitude, longitude`,
           [payload.uid, online ? 'AVAILABLE' : 'OFFLINE', online ? Number(latitude) : null, online ? Number(longitude) : null],
         );
         if (!result.rows[0]) return failure(403, 'Active driver profile required');
@@ -588,16 +639,16 @@ async function invoke(action, payload) {
         });
         return success(200, { driver: result.rows[0] });
       }
-      if (action === 'nearby') {
+      if (action === 'nearby' || action === 'nearby_available') {
         if (!isValidCoordinates(payload.lat, payload.lng)) return failure(400, 'Valid lat and lng query parameters are required');
-        return success(200, await getNearbyDrivers(payload));
+        return success(200, await (action === 'nearby_available' ? getAvailableNearbyDrivers(payload) : getNearbyDrivers(payload)));
       }
       if (action === 'set_busy') {
         const result = await pool.query(
           `UPDATE drivers SET availability = $2
            WHERE uid = $1 AND approval_status = 'ACTIVE'
              AND (($3::boolean AND availability = 'AVAILABLE') OR (NOT $3::boolean AND availability = 'BUSY'))
-           RETURNING uid, code, availability, latitude, longitude`,
+           RETURNING uid, availability, latitude, longitude`,
           [payload.uid, payload.busy ? 'BUSY' : 'AVAILABLE', Boolean(payload.busy)],
         );
         if (!result.rows[0]) return failure(409, 'Driver is not in the required availability state');
@@ -640,17 +691,17 @@ async function invoke(action, payload) {
           || !isValidCoordinates(dropoff_lat, dropoff_lng) || vehicle_type !== 'CAB_4_SEAT') {
           return failure(400, 'customer_id, valid pickup/dropoff coordinates, and vehicle_type CAB_4_SEAT are required');
         }
-        const candidates = await invokePeer('driver', 'nearby', {
+        const candidates = await invokePeer('driver', 'nearby_available', {
           lat: Number(pickup_lat), lng: Number(pickup_lng), radius: 1000, limit: 100, page: 1,
         });
         const offered = candidates.drivers[0] || null;
         const candidateIds = candidates.drivers.map((driver) => driver.uid);
-        const id = crypto.randomUUID();
+        const id = await nextId(pool,'booking');
         const result = await pool.query(
           `INSERT INTO bookings
             (booking_id, customer_id, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
              vehicle_type, status, offered_driver_uid, candidate_driver_uids, offered_index, offered_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, CASE WHEN $9::uuid IS NULL THEN NULL ELSE NOW() END)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, CASE WHEN $9::text IS NULL THEN NULL ELSE NOW() END)
            RETURNING *`,
           [
             id, payload.customer_id, Number(pickup_lat), Number(pickup_lng),
@@ -758,7 +809,7 @@ async function invoke(action, payload) {
         const result = await pool.query(
           `UPDATE bookings SET status = 'CANCELED', cancel_reason = $3, updated_at = NOW()
            WHERE booking_id = $1 AND customer_id = $2 AND status IN ('SEARCHING_DRIVER', 'NO_DRIVERS_AVAILABLE')
-            RETURNING booking_id, code, status, cancel_reason`,
+            RETURNING booking_id, status, cancel_reason`,
           [payload.booking_id, payload.customer_id, reason.slice(0, 500)],
         );
         if (!result.rows[0]) return failure(409, 'Booking not found or cannot be canceled');
@@ -799,7 +850,7 @@ async function invoke(action, payload) {
         return success(200, { trip: result.rows[0] });
       }
       if (action === 'create_from_booking') {
-        const tripId = crypto.randomUUID();
+        const tripId = await nextId(pool,'trip');
         const result = await pool.query(
           `INSERT INTO trips (trip_id, booking_id, customer_id, driver_id, status, fare_amount)
            VALUES ($1, $2, $3, $4, 'DRIVER_ASSIGNED', $5)
@@ -881,7 +932,7 @@ async function invoke(action, payload) {
           const result = await pool.query(
             `INSERT INTO ratings (rating_id, trip_id, customer_id, stars, comment)
              VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-            [crypto.randomUUID(), payload.trip_id, payload.customer_id, stars, String(payload.comment || '').slice(0, 2000)],
+            [await nextId(pool,'rating'), payload.trip_id, payload.customer_id, stars, String(payload.comment || '').slice(0, 2000)],
           );
           return success(201, { rating: result.rows[0] });
         } catch (error) {
@@ -894,7 +945,7 @@ async function invoke(action, payload) {
     case 'payment': {
       if (action === 'health') return success(200, { context, status: 'UP' });
       if (action === 'get_for_user') {
-        const result = await pool.query(`SELECT payment_id, code, trip_id, customer_id, payment_method, status, amount, created_at, updated_at
+        const result = await pool.query(`SELECT payment_id, trip_id, customer_id, payment_method, status, amount, created_at, updated_at
           FROM payments WHERE payment_id = $1`, [payload.payment_id]);
         const payment = result.rows[0];
         if (!payment) return failure(404, 'Payment not found');
@@ -905,7 +956,7 @@ async function invoke(action, payload) {
         return success(200, { payment });
       }
       if (action === 'demo_callback') {
-        if (process.env.PAYMENT_TEST_MODE !== 'true') return failure(404, 'Local payment simulator is disabled');
+        if (process.env.PAYMENT_TEST_MODE !== 'true' && !smokeMode) return failure(404, 'Local payment simulator is disabled');
         if (!['SUCCESS', 'FAILED'].includes(payload.status)) return failure(400, 'status must be SUCCESS or FAILED');
         // This local provider simulator still exercises the signed webhook flow.
         const signature = crypto.createHmac('sha256', process.env.PAYMENT_WEBHOOK_SECRET)
@@ -945,7 +996,7 @@ async function invoke(action, payload) {
             `INSERT INTO payments (payment_id, trip_id, customer_id, payment_method, status, amount, idempotency_key)
              VALUES ($1, $2, $3, 'ONLINE_PREPAID', 'PENDING', $4, $5)
              ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`,
-            [crypto.randomUUID(), payload.trip_id, payload.customer_id, trip.trip.fare_amount, payload.idempotency_key],
+            [await nextId(pool,'payment'), payload.trip_id, payload.customer_id, trip.trip.fare_amount, payload.idempotency_key],
           );
           if (result.rows[0]) {
             const response = success(200, { payment: result.rows[0], idempotent_replay: false });
@@ -993,7 +1044,7 @@ async function invoke(action, payload) {
           payment = prior.rows[0] || (await client.query(`INSERT INTO payments
             (payment_id, trip_id, customer_id, payment_method, status, amount)
             VALUES ($1, $2, $3, 'CASH_POSTPAID', 'COMPLETED', $4) RETURNING *`,
-          [crypto.randomUUID(), payload.trip_id, trip.trip.customer_id, trip.trip.fare_amount])).rows[0];
+          [await nextId(pool,'payment'), payload.trip_id, trip.trip.customer_id, trip.trip.fare_amount])).rows[0];
           await client.query('COMMIT');
         } catch (error) { await client.query('ROLLBACK'); throw error; }
         finally { client.release(); }
@@ -1013,11 +1064,6 @@ async function invoke(action, payload) {
         const expectedBuffer = Buffer.from(expected);
         if (suppliedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
           return failure(401, 'Invalid webhook signature');
-        }
-        if (isPublicCode('payment', order_id)) {
-          const reference = await resolvePublicCode(pool, 'payment', order_id);
-          if (!reference) return failure(404, 'Payment code not found');
-          order_id = reference.id;
         }
         const result = await pool.query(
           `UPDATE payments SET status = $2, updated_at = NOW()
@@ -1053,7 +1099,11 @@ async function invoke(action, payload) {
       if (action === 'health') return success(200, { context, status: 'UP' });
       if (action === 'for_user') {
         const result = await pool.query(`SELECT event_id, topic, payload, received_at FROM notification_logs
-          WHERE payload->>'customer_id' = $1 OR payload->>'driver_id' = $1 OR payload->>'offered_driver_uid' = $1
+          WHERE CASE payload->>'event_type'
+            WHEN 'BookingCreated' THEN payload->>'customer_id' = $1
+            WHEN 'DriverOfferCreated' THEN payload->>'driver_id' = $1
+            ELSE payload->>'customer_id' = $1 OR payload->>'driver_id' = $1 OR payload->>'offered_driver_uid' = $1
+          END
           ORDER BY received_at DESC LIMIT $2`, [payload.user_id, Math.min(Math.max(Math.trunc(Number(payload.limit)) || 50, 1), 200)]);
         return success(200, { notifications: result.rows });
       }
@@ -1075,10 +1125,14 @@ async function startNotificationConsumer() {
   const admin = kafka.admin();
   await admin.connect();
   try {
-    await admin.createTopics({
-      topics: eventTopics.map((topic) => ({ topic, numPartitions: 3, replicationFactor: 1 })),
-      waitForLeaders: true,
-    });
+    const existingTopics = new Set(await admin.listTopics());
+    const missingTopics = eventTopics.filter(topic => !existingTopics.has(topic));
+    if (missingTopics.length) {
+      await admin.createTopics({
+        topics: missingTopics.map((topic) => ({ topic, numPartitions: 3, replicationFactor: 1 })),
+        waitForLeaders: true,
+      });
+    }
   } finally {
     await admin.disconnect();
   }

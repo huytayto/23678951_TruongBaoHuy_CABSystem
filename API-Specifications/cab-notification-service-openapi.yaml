@@ -10,5 +10,5 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: List of consumed notification events

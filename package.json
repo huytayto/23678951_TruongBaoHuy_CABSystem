@@ -6,17 +6,17 @@
   "scripts": {
     "start:gateway": "node api-gateway/src/server.js",
     "start:service": "node services/domain-service.js",
-    "check": "node --check api-gateway/src/server.js && node --check api-gateway/src/auth.js && node --check api-gateway/src/grpcClients.js && node --check api-gateway/src/redisRateLimitStore.js && node --check services/domain-service.js && node --check services/domain-rules.js && node --check services/data-encryption.js && node --check services/public-codes.js && node --check services/grpc-healthcheck.js && node --check services/verify-encryption.js && node --check scripts/smoke-test.js && node --check scripts/sync-openapi.js && node --check scripts/build-postman.js && node --check scripts/postman-support.js && node --check scripts/run-postman.js && node --check scripts/prepare-manual.js && node --check scripts/test-manual.js",
-    "test": "node --test tests/domain-rules.test.js tests/api-contract.test.js tests/redis-rate-limit-store.test.js tests/data-encryption.test.js",
+    "check": "node --check api-gateway/src/server.js && node --check api-gateway/src/auth.js && node --check api-gateway/src/grpcClients.js && node --check api-gateway/src/redisRateLimitStore.js && node --check services/domain-service.js && node --check services/domain-rules.js && node --check services/data-encryption.js && node --check services/entity-ids.js && node --check services/id-migration.js && node --check services/grpc-healthcheck.js && node --check services/verify-encryption.js && node --check scripts/smoke-test.js && node --check scripts/sync-openapi.js && node --check scripts/build-demo20.js && node --check scripts/check-demo20.js && node --check services/prepare-smoke.js && node --check services/smoke-fixtures.js && node --check shared/api-paths.js && node --check scripts/reset-demo.js && node --check shared/request-input.js && node --check scripts/migrate-short-ids.js",
+    "test": "node --test tests/domain-rules.test.js tests/api-contract.test.js tests/redis-rate-limit-store.test.js tests/data-encryption.test.js tests/entity-ids.test.js tests/smoke-fixtures.test.js",
     "smoke": "node scripts/smoke-test.js",
     "verify:at-rest": "node services/verify-encryption.js",
     "sync:api-docs": "node scripts/sync-openapi.js",
-    "postman:build": "node scripts/build-postman.js",
-    "postman:prepare": "node scripts/postman-support.js",
-    "test:postman": "node scripts/run-postman.js",
-    "manual:prepare": "node scripts/prepare-manual.js",
-    "test:manual": "node scripts/test-manual.js",
-    "test:manual:default": "node scripts/test-manual.js --default-mode"
+    "demo:build": "node scripts/build-demo20.js",
+    "demo:check": "node scripts/check-demo20.js",
+    "demo:prepare": "docker compose exec -T api-gateway node services/prepare-smoke.js",
+    "demo:at-rest": "docker compose exec -T auth-service node services/verify-encryption.js auth && docker compose exec -T customer-service node services/verify-encryption.js customer && docker compose exec -T driver-service node services/verify-encryption.js driver",
+    "demo:reset": "node scripts/reset-demo.js",
+    "demo:migrate-ids": "node scripts/migrate-short-ids.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.13.4",

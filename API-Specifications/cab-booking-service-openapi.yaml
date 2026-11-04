@@ -16,15 +16,25 @@ paths:
             schema:
               type: object
               properties:
-                pickup_lat: {type: number, example: 10.776889}
-                pickup_lng: {type: number, example: 106.700806}
-                dropoff_lat: {type: number, example: 10.7725}
-                dropoff_lng: {type: number, example: 106.698}
-                vehicle_type: {type: string, example: "CAB_4_SEAT"}
+                pickup_lat:
+                  type: number
+                  example: 22
+                pickup_lng:
+                  type: number
+                  example: 111
+                dropoff_lat:
+                  type: number
+                  example: 22.01
+                dropoff_lng:
+                  type: number
+                  example: 111.01
+                vehicle_type:
+                  type: string
+                  example: CAB_4_SEAT
       responses:
-        '201':
+        "201":
           description: Booking created, searching for driver
-        '429':
+        "429":
           description: Rate limit exceeded
   /api/v1/bookings/{id}/accept:
     post:
@@ -32,9 +42,9 @@ paths:
       security:
         - BearerAuth: []
       responses:
-        '200':
+        "200":
           description: Trip assigned successfully
-        '409':
+        "409":
           description: Trip already accepted by another driver
   /api/v1/bookings/{id}/cancel:
     post:
@@ -48,7 +58,9 @@ paths:
             schema:
               type: object
               properties:
-                reason: {type: string, example: "Changed travel plan"}
+                reason:
+                  type: string
+                  example: Changed travel plan
       responses:
-        '200':
+        "200":
           description: Booking canceled successfully

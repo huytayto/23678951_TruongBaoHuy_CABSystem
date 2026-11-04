@@ -3,7 +3,7 @@
   "info": {
     "title": "CAB Platform API",
     "version": "3.0.0",
-    "description": "Public REST API exposed exclusively by the API Gateway. Gateway-to-service communication uses gRPC; domain events are delivered asynchronously through Kafka. Text values in JSON responses are HTML-escaped to reduce reflected and stored XSS risk. Every /api/v1/... route also accepts the short /... path with identical authentication. Entity references accept UUIDs or readable codes: C1 customer, D1 driver, B1 booking, T1 trip, P1 payment. Use the code returned by the API; existing databases may start new records at higher numbers. Codes are stable, unique, case-insensitive aliases.\n"
+    "description": "Public REST API exposed exclusively by the API Gateway. Gateway-to-service communication uses gRPC; domain events are delivered asynchronously through Kafka. Text values in JSON responses are HTML-escaped to reduce reflected and stored XSS risk. Short /api/... aliases are listed below and use the same authentication and handlers. Original /api/v1/... and legacy /... paths remain supported. Entity references are lowercase primary IDs: c1 customer, d1 driver, b1 booking, t1 trip, p1 payment. IDs are stored directly in primary and foreign keys; there is no separate code field or UUID entity alias.\n Short input aliases are accepted with canonical names retained in responses. Trip status aliases: start, done. Trips advance DRIVER_ASSIGNED -> IN_PROGRESS -> COMPLETED. Conflicting alias/canonical values return HTTP 400."
   },
   "servers": [
     {
@@ -118,10 +118,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "username",
-                  "password"
-                ],
                 "properties": {
                   "username": {
                     "type": "string",
@@ -130,10 +126,8 @@
                   },
                   "password": {
                     "type": "string",
-                    "minLength": 8,
-                    "maxLength": 128,
                     "format": "password",
-                    "example": "Password@123"
+                    "example": "123"
                   },
                   "role": {
                     "type": "string",
@@ -146,8 +140,50 @@
                   "fullname": {
                     "type": "string",
                     "maxLength": 200
+                  },
+                  "user": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "example": "0901234567",
+                    "description": "Short alias for username"
+                  },
+                  "pass": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "123",
+                    "description": "Short alias for password"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "username"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "user"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "password"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "pass"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -177,10 +213,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "username",
-                  "password"
-                ],
                 "properties": {
                   "username": {
                     "type": "string"
@@ -188,8 +220,47 @@
                   "password": {
                     "type": "string",
                     "format": "password"
+                  },
+                  "user": {
+                    "type": "string",
+                    "description": "Short alias for username"
+                  },
+                  "pass": {
+                    "type": "string",
+                    "format": "password",
+                    "description": "Short alias for password"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "username"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "user"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "password"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "pass"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -211,7 +282,7 @@
                     },
                     "uid": {
                       "type": "string",
-                      "format": "uuid"
+                      "pattern": "^[acd][1-9][0-9]{0,14}$"
                     },
                     "role": {
                       "type": "string",
@@ -445,7 +516,7 @@
                 "properties": {
                   "uid": {
                     "type": "string",
-                    "format": "uuid"
+                    "pattern": "^[acd][1-9][0-9]{0,14}$"
                   },
                   "fullname": {
                     "type": "string"
@@ -490,10 +561,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "license_number",
-                  "plate_number"
-                ],
                 "properties": {
                   "license_number": {
                     "type": "string"
@@ -507,8 +574,46 @@
                       "CAB_4_SEAT"
                     ],
                     "default": "CAB_4_SEAT"
+                  },
+                  "license": {
+                    "type": "string",
+                    "description": "Short alias for license_number"
+                  },
+                  "plate": {
+                    "type": "string",
+                    "description": "Short alias for plate_number"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "license_number"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "license"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "plate_number"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "plate"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -599,12 +704,28 @@
                   "latitude": {
                     "type": "number",
                     "minimum": -90,
-                    "maximum": 90
+                    "maximum": 90,
+                    "example": 22
                   },
                   "longitude": {
                     "type": "number",
                     "minimum": -180,
-                    "maximum": 180
+                    "maximum": 180,
+                    "example": 111
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90,
+                    "description": "Short alias for latitude",
+                    "example": 22
+                  },
+                  "lng": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180,
+                    "description": "Short alias for longitude",
+                    "example": 111
                   }
                 }
               }
@@ -626,8 +747,8 @@
         "tags": [
           "Drivers"
         ],
-        "summary": "Search available approved drivers near a coordinate",
-        "description": "Administrative/test endpoint. Customer booking discovery calls Driver Service internally.",
+        "summary": "List drivers of all approval and availability states near a coordinate",
+        "description": "ADMIN-only area listing using last-known coordinates, including offline, pending and rejected drivers. Returns approval_status and availability with accurate total and paging. Dispatch uses a separate internal Redis Geo search restricted to ACTIVE and AVAILABLE drivers. Coordinates are lat=22,lng=111 for the smoke fixture.",
         "security": [
           {
             "BearerAuth": []
@@ -642,7 +763,7 @@
               "type": "number",
               "minimum": -90,
               "maximum": 90,
-              "example": 10.776889
+              "example": 22
             }
           },
           {
@@ -653,7 +774,7 @@
               "type": "number",
               "minimum": -180,
               "maximum": 180,
-              "example": 106.700806
+              "example": 111
             }
           },
           {
@@ -744,34 +865,42 @@
             "BearerAuth": []
           }
         ],
+        "parameters": [
+          {
+            "name": "Limit",
+            "in": "header",
+            "required": false,
+            "description": "Local presentation only. Value 1 enables a separate 20 requests per 10 seconds limiter when SMOKE_MODE=true. Ignored outside smoke mode; the global production limiter remains unchanged.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "pickup_lat",
-                  "pickup_lng",
-                  "dropoff_lat",
-                  "dropoff_lng"
-                ],
                 "properties": {
                   "pickup_lat": {
                     "type": "number",
-                    "example": 10.776889
+                    "example": 22
                   },
                   "pickup_lng": {
                     "type": "number",
-                    "example": 106.700806
+                    "example": 111
                   },
                   "dropoff_lat": {
                     "type": "number",
-                    "example": 10.7725
+                    "example": 22.01
                   },
                   "dropoff_lng": {
                     "type": "number",
-                    "example": 106.698
+                    "example": 111.01
                   },
                   "vehicle_type": {
                     "type": "string",
@@ -779,8 +908,86 @@
                       "CAB_4_SEAT"
                     ],
                     "default": "CAB_4_SEAT"
+                  },
+                  "from_lat": {
+                    "type": "number",
+                    "example": 22,
+                    "description": "Short alias for pickup_lat"
+                  },
+                  "from_lng": {
+                    "type": "number",
+                    "example": 111,
+                    "description": "Short alias for pickup_lng"
+                  },
+                  "to_lat": {
+                    "type": "number",
+                    "example": 22.01,
+                    "description": "Short alias for dropoff_lat"
+                  },
+                  "to_lng": {
+                    "type": "number",
+                    "example": 111.01,
+                    "description": "Short alias for dropoff_lng"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "pickup_lat"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "from_lat"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "pickup_lng"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "from_lng"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "dropoff_lat"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "to_lat"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "dropoff_lng"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "to_lng"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -940,11 +1147,10 @@
                   "status": {
                     "type": "string",
                     "enum": [
-                      "EN_ROUTE",
-                      "ARRIVED",
-                      "PICKED_UP",
                       "IN_PROGRESS",
-                      "COMPLETED"
+                      "COMPLETED",
+                      "start",
+                      "done"
                     ]
                   }
                 }
@@ -1125,16 +1331,34 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "trip_id"
-                ],
                 "properties": {
                   "trip_id": {
                     "type": "string",
-                    "description": "Trip UUID or readable T code",
-                    "example": "T1"
+                    "description": "Trip primary ID",
+                    "example": "t1"
+                  },
+                  "trip": {
+                    "type": "string",
+                    "description": "Short alias for trip_id",
+                    "example": "t1"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "trip_id"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "trip"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -1169,20 +1393,38 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "trip_id"
-                ],
                 "properties": {
                   "trip_id": {
                     "type": "string",
-                    "description": "Trip UUID or readable T code",
-                    "example": "T1"
+                    "description": "Trip primary ID",
+                    "example": "t1"
                   },
                   "amount": {
                     "type": "number",
                     "minimum": 0
+                  },
+                  "trip": {
+                    "type": "string",
+                    "description": "Short alias for trip_id",
+                    "example": "t1"
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "trip_id"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "trip"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -1218,7 +1460,7 @@
                 "properties": {
                   "order_id": {
                     "type": "string",
-                    "description": "Payment UUID or P code. HMAC covers the literal supplied order_id."
+                    "description": "Payment primary ID. HMAC covers the literal supplied order_id."
                   },
                   "status": {
                     "type": "string",
@@ -1315,7 +1557,7 @@
         },
         "responses": {
           "201": {
-            "description": "Challenge created without exposing code"
+            "description": "Challenge created; response includes code as a random six-digit string (local demo)"
           },
           "400": {
             "description": "Invalid phone"
@@ -1530,22 +1772,64 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "latitude",
-                  "longitude"
-                ],
                 "properties": {
                   "latitude": {
                     "type": "number",
                     "minimum": -90,
-                    "maximum": 90
+                    "maximum": 90,
+                    "example": 22
                   },
                   "longitude": {
                     "type": "number",
                     "minimum": -180,
-                    "maximum": 180
+                    "maximum": 180,
+                    "example": 111
+                  },
+                  "lat": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90,
+                    "description": "Short alias for latitude",
+                    "example": 22
+                  },
+                  "lng": {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180,
+                    "description": "Short alias for longitude",
+                    "example": 111
                   }
-                }
+                },
+                "allOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "latitude"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "lat"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "longitude"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "lng"
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -1626,7 +1910,7 @@
         "tags": [
           "Drivers"
         ],
-        "summary": "Get own profile and readable driver code",
+        "summary": "Get own profile and primary driver ID",
         "security": [
           {
             "BearerAuth": []
@@ -1652,7 +1936,7 @@
         "tags": [
           "Bookings"
         ],
-        "summary": "Get booking by B code or UUID (owner, offered or assigned driver, ADMIN)",
+        "summary": "Get booking by primary ID (owner, offered or assigned driver, ADMIN)",
         "security": [
           {
             "BearerAuth": []
@@ -1660,7 +1944,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Booking with readable code"
+            "description": "Booking with primary booking_id"
           },
           "403": {
             "description": "Not a participant"
@@ -1681,7 +1965,7 @@
         "tags": [
           "Payments"
         ],
-        "summary": "Read payment by P code or UUID (trip participants or ADMIN)",
+        "summary": "Read payment by primary ID (trip participants or ADMIN)",
         "security": [
           {
             "BearerAuth": []
@@ -1754,6 +2038,117 @@
           }
         }
       }
+    },
+    "/api/health": {
+      "$ref": "#/paths/~1health"
+    },
+    "/api/ready": {
+      "$ref": "#/paths/~1ready"
+    },
+    "/api/services": {
+      "$ref": "#/paths/~1health~1services"
+    },
+    "/api/register": {
+      "$ref": "#/paths/~1api~1v1~1auth~1register"
+    },
+    "/api/login": {
+      "$ref": "#/paths/~1api~1v1~1auth~1login"
+    },
+    "/api/logout": {
+      "$ref": "#/paths/~1api~1v1~1auth~1logout"
+    },
+    "/api/customers/me": {
+      "$ref": "#/paths/~1api~1v1~1customers~1me"
+    },
+    "/api/customers/{id}": {
+      "$ref": "#/paths/~1api~1v1~1customers~1{id}"
+    },
+    "/api/customers": {
+      "$ref": "#/paths/~1api~1v1~1customers"
+    },
+    "/api/drivers/register": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1register"
+    },
+    "/api/drivers/{id}/approve": {
+      "$ref": "#/paths/~1api~1v1~1admin~1drivers~1{id}~1approve"
+    },
+    "/api/drivers/availability": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1availability"
+    },
+    "/api/drivers/nearby": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1nearby"
+    },
+    "/api/drivers/{id}": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1{id}"
+    },
+    "/api/bookings": {
+      "$ref": "#/paths/~1api~1v1~1bookings"
+    },
+    "/api/bookings/{id}/accept": {
+      "$ref": "#/paths/~1api~1v1~1bookings~1{id}~1accept"
+    },
+    "/api/bookings/{id}/cancel": {
+      "$ref": "#/paths/~1api~1v1~1bookings~1{id}~1cancel"
+    },
+    "/api/trips/{id}/status": {
+      "$ref": "#/paths/~1api~1v1~1trips~1{id}~1status"
+    },
+    "/api/trips/{id}": {
+      "$ref": "#/paths/~1api~1v1~1trips~1{id}"
+    },
+    "/api/trips/{id}/cancel": {
+      "$ref": "#/paths/~1api~1v1~1trips~1{id}~1cancel"
+    },
+    "/api/trips/{id}/rating": {
+      "$ref": "#/paths/~1api~1v1~1trips~1{id}~1rating"
+    },
+    "/api/payments/online": {
+      "$ref": "#/paths/~1api~1v1~1payments~1online"
+    },
+    "/api/payments/cash-confirm": {
+      "$ref": "#/paths/~1api~1v1~1payments~1cash-confirm"
+    },
+    "/api/payments/webhook": {
+      "$ref": "#/paths/~1api~1v1~1payments~1webhook"
+    },
+    "/api/notifications/logs": {
+      "$ref": "#/paths/~1api~1v1~1notifications~1logs"
+    },
+    "/api/otp/request": {
+      "$ref": "#/paths/~1api~1v1~1auth~1otp~1request"
+    },
+    "/api/otp/verify": {
+      "$ref": "#/paths/~1api~1v1~1auth~1otp~1verify"
+    },
+    "/api/drivers/pending": {
+      "$ref": "#/paths/~1api~1v1~1admin~1drivers"
+    },
+    "/api/drivers/offers": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1offers"
+    },
+    "/api/bookings/{id}/trip": {
+      "$ref": "#/paths/~1api~1v1~1bookings~1{id}~1trip"
+    },
+    "/api/trips/{id}/location": {
+      "$ref": "#/paths/~1api~1v1~1trips~1{id}~1location"
+    },
+    "/api/notifications/me": {
+      "$ref": "#/paths/~1api~1v1~1notifications~1me"
+    },
+    "/api/otp": {
+      "$ref": "#/paths/~1api~1v1~1auth~1otp"
+    },
+    "/api/drivers/me": {
+      "$ref": "#/paths/~1api~1v1~1drivers~1me"
+    },
+    "/api/bookings/{id}": {
+      "$ref": "#/paths/~1api~1v1~1bookings~1{id}"
+    },
+    "/api/payments/{id}": {
+      "$ref": "#/paths/~1api~1v1~1payments~1{id}"
+    },
+    "/api/payments/{id}/callback": {
+      "$ref": "#/paths/~1api~1v1~1demo~1payments~1{id}~1callback"
     }
   },
   "components": {
@@ -1769,7 +2164,7 @@
         "name": "id",
         "in": "path",
         "required": true,
-        "description": "UUID or readable entity code (C1, D1, B1, T1, P1), as appropriate for the route",
+        "description": "Lowercase primary ID (c1, d1, b1, t1, p1), as appropriate for the route",
         "schema": {
           "type": "string"
         }

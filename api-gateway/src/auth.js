@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { isValidSecret } = require('../../services/domain-rules');
+const { isEntityId } = require('../../services/entity-ids');
 
 const jwtSecret = process.env.JWT_SECRET;
 
@@ -24,6 +25,8 @@ function requireAuth(redis) {
         algorithms: ['HS256'],
         issuer: 'cab-auth',
       });
+      const kind = { ADMIN: 'admin', CUSTOMER: 'customer', DRIVER: 'driver' }[payload.role];
+      if (!isEntityId(kind,payload.sub)) throw new Error('Invalid user ID; log in again');
     } catch {
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }

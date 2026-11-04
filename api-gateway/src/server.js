@@ -10,7 +10,9 @@ const Redis = require('ioredis');
 const { authorize, requireAuth } = require('./auth');
 const { contexts, invoke } = require('./grpcClients');
 const RedisRateLimitStore = require('./redisRateLimitStore');
-const { isPublicCode } = require('../../services/public-codes');
+const { isEntityId } = require('../../services/entity-ids');
+const { canonicalApiUrl } = require('../../shared/api-paths');
+const { normalizeInput } = require('../../shared/request-input');
 
 process.env.PGHOST = process.env.PGHOST || process.env.POSTGRES_HOST;
 process.env.PGPORT = process.env.PGPORT || process.env.POSTGRES_PORT || '5432';
@@ -39,6 +41,13 @@ const kafka = new Kafka({
   requestTimeout: 1500,
 });
 const authn = requireAuth(redis);
+const demoBookingLimiter = rateLimit({
+  windowMs: 10000, max: 20,
+  store: new RedisRateLimitStore(redis, 'cab:demo-bookings:'),
+  keyGenerator: (req) => req.user.sub,
+  standardHeaders: true, legacyHeaders: false,
+  message: { success: false, demo: true, message: 'Demo limit: 20 requests / 10 seconds' },
+});
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb', strict: true }));
@@ -59,9 +68,15 @@ app.use((req, res, next) => {
 });
 
 // Short paths use exactly the same handlers, authentication and rate limiter.
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
+  req.url = canonicalApiUrl(req.url);
   if (/^\/(auth|customers|drivers|admin|bookings|trips|payments|notifications|demo)(\/|\?|$)/.test(req.url)) {
     req.url = `/api/v1${req.url}`;
+  }
+  try {
+    req.body = normalizeInput(req.body, req.method === 'PATCH' && /^\/api\/v1\/trips\/[^/?]+\/status(?:\?|$)/.test(req.url));
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
   }
   next();
 });
@@ -85,12 +100,10 @@ function serviceRoute(context, action, payloadFromRequest) {
       for (const [field, target] of Object.entries(references[context] || {})) {
         // Webhook signatures cover the literal order_id supplied by the sender.
         if (context === 'payment' && action === 'webhook' && field === 'order_id') continue;
-        if (!isPublicCode(target, payload[field])) continue;
-        // Authorization middleware has already run. Ownership is checked by the
-        // domain service against the resolved UUID, never against a client alias.
-        const reference = await invoke(target, 'resolve_code', { code: payload[field] });
-        if (reference.status !== 200) return sendDomainResult(res, reference);
-        payload[field] = reference.body.id;
+        if (payload[field] === undefined || payload[field] === null) continue;
+        const id = typeof payload[field] === 'string' ? payload[field].toLowerCase() : payload[field];
+        if (!isEntityId(target,id)) return res.status(400).json({success:false,message:`Invalid ${target} ID`});
+        payload[field] = id;
       }
       const result = await invoke(context, action, payload);
       return sendDomainResult(res, result);
@@ -142,16 +155,16 @@ app.get('/health', (_req, res) => res.json({ status: 'healthy' }));
 app.get('/', (_req, res) => res.json({
   name: 'CAB API', base_url: 'http://localhost:8080',
   usage: 'Use GET/POST/PATCH in Postman. Protected routes require Authorization: Bearer <token>.',
-  codes: { customer: 'C1', driver: 'D1', booking: 'B1', trip: 'T1', payment: 'P1' },
-  note: 'Codes are returned in the code field; examples may refer to older records. UUID and /api/v1 paths remain supported.',
-  routes: ['GET /health', 'GET /ready', 'POST /auth/register', 'POST /auth/login',
-    'GET /customers/me', 'GET /drivers/me', 'POST /auth/otp/request', 'GET /auth/otp', 'POST /auth/otp/verify',
-    'POST /drivers/register', 'GET /admin/drivers', 'PATCH /admin/drivers/D1/approve', 'PATCH /drivers/availability',
-    'GET /drivers/nearby?lat=10.77&lng=106.70&radius=1km&limit=2&page=1',
-    'POST /bookings', 'GET /bookings?limit=2&page=1', 'GET /drivers/offers',
-    'POST /bookings/B1/accept', 'GET /bookings/B1/trip', 'GET /trips/T1', 'PATCH /trips/T1/status',
-    'PATCH /trips/T1/location', 'POST /trips/T1/cancel', 'POST /trips/T1/rating', 'POST /payments/online',
-    'GET /payments/P1', 'POST /demo/payments/P1/callback', 'GET /notifications/me'],
+  ids: { customer: 'c1', driver: 'd1', booking: 'b1', trip: 't1', payment: 'p1' },
+  note: 'IDs are primary keys in responses and database references. There is no code alias or UUID entity ID.',
+  routes: ['GET /api/health', 'GET /api/ready', 'POST /api/register', 'POST /api/login',
+    'GET /api/customers/me', 'GET /api/drivers/me', 'POST /api/otp/request', 'GET /api/otp', 'POST /api/otp/verify',
+    'POST /api/drivers/register', 'GET /api/drivers/pending', 'PATCH /api/drivers/d1/approve', 'PATCH /api/drivers/availability',
+    'GET /api/drivers/nearby?lat=22&lng=111&radius=1km&limit=5&page=1',
+    'POST /api/bookings', 'GET /api/bookings?limit=2&page=1', 'GET /api/drivers/offers',
+    'POST /api/bookings/b1/accept', 'GET /api/bookings/b1/trip', 'GET /api/trips/t1', 'PATCH /api/trips/t1/status',
+    'PATCH /api/trips/t1/location', 'POST /api/trips/t1/cancel', 'POST /api/trips/t1/rating', 'POST /api/payments/online',
+    'GET /api/payments/p1', 'POST /api/payments/p1/callback', 'GET /api/notifications/me'],
 }));
 
 app.get('/ready', async (_req, res) => {
@@ -225,7 +238,12 @@ app.get('/api/v1/drivers/:id', authn, authorize('DRIVER', 'ADMIN'),
     uid: req.params.id, requester_id: req.user.sub, role: req.user.role,
   })));
 
-app.post('/api/v1/bookings', authn, authorize('CUSTOMER'), serviceRoute('booking', 'create', (req) => ({
+app.post('/api/v1/bookings', authn, authorize('CUSTOMER'), (req, res, next) => {
+  // Opt-in local load demonstration on the real booking URL. Normal traffic
+  // retains the global production limit and cannot activate this when disabled.
+  if (process.env.SMOKE_MODE === 'true' && req.get('Limit') === '1') return demoBookingLimiter(req, res, next);
+  return next();
+}, serviceRoute('booking', 'create', (req) => ({
   ...req.body, customer_id: req.user.sub,
 })));
 app.get('/api/v1/bookings', authn, authorize('CUSTOMER', 'ADMIN'),
@@ -287,12 +305,15 @@ app.use((error, _req, res, _next) => {
   return res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`API Gateway listening on port ${port}`);
-});
+let server;
+async function startGateway() {
+  if (process.env.SMOKE_MODE === 'true') await require('../../services/prepare-smoke').prepare(invoke, false);
+  server = app.listen(port, '0.0.0.0', () => console.log(`API Gateway listening on port ${port}`));
+}
+startGateway().catch((error) => { console.error('Gateway startup failed:', error.message); process.exit(1); });
 
 async function shutdown() {
-  server.close();
+  if (server) server.close();
   await Promise.allSettled([redis.quit(), pool.end()]);
   process.exit(0);
 }

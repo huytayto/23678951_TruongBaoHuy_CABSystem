@@ -1,12 +1,14 @@
 # Chấm tay bằng URL ngắn
 
+> Tài liệu bộ cũ, giữ để tham khảo. Script chuẩn bị/chạy và helper bằng chứng của bộ này đã được gỡ. Dùng [bộ smoke 20 phút](smoke-20p/README.md) cho lượt chấm hiện tại.
+
 Backend dùng các công nghệ hiện có: Node.js/Express, gRPC, PostgreSQL, Redis, Kafka. Không thêm thư viện hoặc service để cung cấp URL/mã ngắn. UUID được giữ làm khóa nội bộ; PostgreSQL sequence cấp mã `C…`, `D…`, `B…`, `T…`, `P…` có unique index.
 
 ## Chuẩn bị một lần
 
 ```powershell
 docker compose -f docker-compose.yml -f postman/docker-compose.manual.yml up --build -d
-npm.cmd run manual:prepare
+# Script chuẩn bị cũ đã được gỡ; xem bộ smoke-20p.
 ```
 
 Import **`postman/CAB.manual.local.postman_environment.json`** vào Postman, chọn Environment **CAB — Chấm tay (local)**. Không cần bật helper cổng 8099 để thực hiện nghiệp vụ bằng tay. Chạy `manual:prepare` không để lại tiến trình nền.
@@ -16,8 +18,8 @@ Mở **[MANUAL.local.md](MANUAL.local.md)** để biết chính xác mã các t�
 - 2 tài xế sẵn sàng gần `10.77,106.70`; 1 chờ duyệt; 1 bị từ chối; 1 đã duyệt nhưng offline.
 - Customer có ít nhất 5 booking mẫu để kiểm tra phân trang. Booking mẫu đã hủy; tạo booking mới để thực hiện luồng nhận chuyến.
 - Environment chứa sẵn token admin/customer/5 driver. Token hết hạn sau một giờ; đăng nhập lại hoặc chạy lại prepare để lấy token mới.
-- `booking_code`, `trip_code`, `payment_code` để trống. Sau khi tạo bản ghi, lấy trường **`code`** trong response rồi nhập trực tiếp vào URL hoặc lưu biến tương ứng.
-- Với DB đã có dữ liệu, mã mới có thể là `C50`, `D39`, `B57`… thay vì `C1`, `D1`, `B1`. Không reset DB chỉ để ép số về 1; không dùng mã ví dụ để đoán tài khoản của mình.
+- `booking_code`, `trip_code`, `payment_code` để trống. Sau khi tạo bản ghi, lấy trường **`ID`** trong response rồi nhập trực tiếp vào URL hoặc lưu biến tương ứng.
+- Với DB đã có dữ liệu, mã mới có thể là `c50`, `d39`, `b57`… thay vì `c1`, `d1`, `b1`. Không reset DB chỉ để ép số về 1; không dùng mã ví dụ để đoán tài khoản của mình.
 
 ## Quy ước khi nhập request
 
@@ -34,7 +36,7 @@ Trong tab **Authorization → Bearer Token**, nhập một trong:
 
 Chọn **Body → raw → JSON** cho POST/PATCH có body. Không đưa token/password lên query string. Không đổi thao tác ghi thành GET. Các URL `/api/v1/...` và UUID cũ vẫn dùng được, với cùng kiểm tra JWT/RBAC/ownership.
 
-Các mã `C1/D1/B1/T1/P1` dưới đây là ví dụ: thay bằng mã `code` thật trong response hoặc dùng biến trong Environment.
+Các mã `c1/d1/b1/t1/p1` dưới đây là ví dụ: thay bằng mã `ID` thật trong response hoặc dùng biến trong Environment.
 
 ## Health, đăng ký và đăng nhập [6,9,10]
 
@@ -65,9 +67,9 @@ POST http://localhost:8080/auth/login
 
 ```text
 GET http://localhost:8080/customers/me                         (Customer)
-GET http://localhost:8080/customers/C1                         (chính chủ hoặc Admin)
+GET http://localhost:8080/customers/c1                         (chính chủ hoặc Admin)
 GET http://localhost:8080/drivers/me                           (Driver)
-GET http://localhost:8080/drivers/D1                           (chính chủ hoặc Admin)
+GET http://localhost:8080/drivers/d1                           (chính chủ hoặc Admin)
 GET http://localhost:8080/drivers/nearby?lat=10.77&lng=106.70&radius=1km&limit=1&page=1  (Admin)
 GET http://localhost:8080/drivers/nearby?lat=10.77&lng=106.70&radius=1km&limit=1&page=2  (Admin)
 GET http://localhost:8080/bookings?limit=2&page=1                (Customer)
@@ -107,12 +109,12 @@ POST http://localhost:8080/drivers/register                    (Driver mới)
 {"license_number":"BL-006","plate_number":"51A-006"}
 ```
 
-Nhận `code` của hồ sơ, trạng thái PENDING_APPROVAL. Dùng Admin:
+Nhận `ID` của hồ sơ, trạng thái PENDING_APPROVAL. Dùng Admin:
 
 ```text
 GET   http://localhost:8080/admin/drivers
-GET   http://localhost:8080/drivers/D1
-PATCH http://localhost:8080/admin/drivers/D1/approve
+GET   http://localhost:8080/drivers/d1
+PATCH http://localhost:8080/admin/drivers/d1/approve
 ```
 
 ```json
@@ -143,44 +145,44 @@ POST http://localhost:8080/bookings
 {"pickup_lat":10.77,"pickup_lng":106.70,"dropoff_lat":10.78,"dropoff_lng":106.71}
 ```
 
-Đọc `booking.code`, ví dụ B1. Trong chế độ manual, response có `offer_expires_in:300`: có **5 phút** để nhập lệnh nhận chuyến; cấu hình mặc định ngoài chế độ manual vẫn là 15 giây. Nếu hết hạn, xem offer của tài xế tiếp theo hoặc hủy booking và tạo mới; không bỏ kiểm tra hạn offer.
+Đọc `booking.booking_id`, ví dụ b1. Trong chế độ manual, response có `offer_expires_in:300`: có **5 phút** để nhập lệnh nhận chuyến; cấu hình mặc định ngoài chế độ manual vẫn là 15 giây. Nếu hết hạn, xem offer của tài xế tiếp theo hoặc hủy booking và tạo mới; không bỏ kiểm tra hạn offer.
 
 Driver đang được offer:
 
 ```text
 GET  http://localhost:8080/drivers/offers
 GET  http://localhost:8080/notifications/me
-POST http://localhost:8080/bookings/B1/accept
+POST http://localhost:8080/bookings/b1/accept
 ```
 
-Accept không cần body; đọc `trip.code`, ví dụ T1. Sai driver trả 409. Customer lấy chuyến và tài xế qua:
+Accept không cần body; đọc `trip.code`, ví dụ t1. Sai driver trả 409. Customer lấy chuyến và tài xế qua:
 
 ```text
-GET http://localhost:8080/bookings/B1/trip
-GET http://localhost:8080/trips/T1
+GET http://localhost:8080/bookings/b1/trip
+GET http://localhost:8080/trips/t1
 ```
 
 Driver dùng **cùng URL** sau, chỉ đổi trường status và bấm Send lần lượt:
 
 ```text
-PATCH http://localhost:8080/trips/T1/status
+PATCH http://localhost:8080/trips/t1/status
 ```
 
 ```json
-{"status":"EN_ROUTE"}
+{"status":"IN_PROGRESS"}
 ```
 
-Tiếp tục với `ARRIVED`, `PICKED_UP`, `IN_PROGRESS`, `COMPLETED`. Gửi COMPLETED ngay từ đầu phải bị chặn. Khi đang IN_PROGRESS, kiểm tra vị trí:
+Chỉ hai trạng thái cập nhật: `IN_PROGRESS` rồi `COMPLETED`. Gửi COMPLETED ngay từ đầu phải bị chặn. Trước COMPLETED, khi đang IN_PROGRESS, kiểm tra vị trí:
 
 ```text
-PATCH http://localhost:8080/trips/T1/location                   (Driver)
+PATCH http://localhost:8080/trips/t1/location                   (Driver)
 ```
 
 ```json
 {"latitude":10.775,"longitude":106.705}
 ```
 
-Customer gọi lại `GET /trips/T1` để kiểm tra vị trí lưu bền.
+Customer gọi lại `GET /trips/t1` để kiểm tra vị trí lưu bền.
 
 ## Thanh toán và replay [19,30]
 
@@ -192,22 +194,22 @@ Header: Idempotency-Key: pay-1
 ```
 
 ```json
-{"trip_id":"T1"}
+{"trip_id":"t1"}
 ```
 
-Đọc `payment.code`, ví dụ P1. Gửi lại **cùng request và key** phải nhận đúng response cũ, không payment mới. Với chuyến khác dùng key khác như `pay-2`; key là chuỗi tự đặt, không bắt buộc UUID.
+Đọc `payment.payment_id`, ví dụ p1. Gửi lại **cùng request và key** phải nhận đúng response cũ, không payment mới. Với chuyến khác dùng key khác như `pay-2`; key là chuỗi tự đặt, không bắt buộc UUID.
 
 Dùng Admin để mô phỏng provider callback, không cần tính HMAC bằng tay:
 
 ```text
-POST http://localhost:8080/demo/payments/P1/callback
+POST http://localhost:8080/demo/payments/p1/callback
 ```
 
 ```json
 {"status":"SUCCESS"}
 ```
 
-Payment chuyển COMPLETED; `GET /payments/P1` và `GET /trips/T1` bằng Customer cho thấy PAID/liên kết payment. Callback mô phỏng **chỉ bật trong manual override bằng PAYMENT_TEST_MODE=true, chỉ Admin gọi được**; vẫn tạo chữ ký và gọi cùng handler webhook. Customer gọi simulator phải nhận 403. Đây là giao dịch local, không chuyển tiền thật.
+Payment chuyển COMPLETED; `GET /payments/p1` và `GET /trips/t1` bằng Customer cho thấy PAID/liên kết payment. Callback mô phỏng **chỉ bật trong manual override bằng PAYMENT_TEST_MODE=true, chỉ Admin gọi được**; vẫn tạo chữ ký và gọi cùng handler webhook. Customer gọi simulator phải nhận 403. Đây là giao dịch local, không chuyển tiền thật.
 
 Endpoint webhook gốc vẫn kiểm tra HMAC bắt buộc:
 
@@ -216,7 +218,7 @@ POST http://localhost:8080/payments/webhook
 ```
 
 ```json
-{"order_id":"P1","status":"SUCCESS","signature":"invalid"}
+{"order_id":"p1","status":"SUCCESS","signature":"invalid"}
 ```
 
 Phải trả 401. Chữ ký thật được tính trên `order_id:status` đúng chuỗi trong request. Gửi replay online với key `pay-1` sau settlement vẫn nhận snapshot gốc PENDING như response đầu tiên; trạng thái hiện tại xem bằng GET payment, không suy từ snapshot replay.
@@ -226,7 +228,7 @@ Phải trả 401. Chữ ký thật được tính trên `order_id:status` đúng
 Customer, trip COMPLETED:
 
 ```text
-POST http://localhost:8080/trips/T1/rating
+POST http://localhost:8080/trips/t1/rating
 ```
 
 ```json
@@ -238,15 +240,15 @@ Trả 201, đúng trip và comment đã escape; gửi lại trả 409.
 Tạo booking/trip **mới** để hủy, dùng một trong:
 
 ```text
-POST http://localhost:8080/bookings/B2/cancel                   (khi còn tìm tài xế)
-POST http://localhost:8080/trips/T2/cancel                      (khi chuyến chưa hoàn tất)
+POST http://localhost:8080/bookings/b2/cancel                   (khi còn tìm tài xế)
+POST http://localhost:8080/trips/t2/cancel                      (khi chuyến chưa hoàn tất)
 ```
 
 ```json
 {"reason":"Doi lich trinh"}
 ```
 
-Đọc lại `GET /bookings/B2` hoặc `GET /trips/T2` để thấy CANCELED. Với hủy trip, cả Driver và Customer xem `GET /notifications/me` bằng token tương ứng.
+Đọc lại `GET /bookings/b2` hoặc `GET /trips/t2` để thấy CANCELED. Với hủy trip, cả Driver và Customer xem `GET /notifications/me` bằng token tương ứng.
 
 ## Các phép thử bảo mật và bằng chứng ngoài API [24–29]
 
@@ -256,7 +258,7 @@ POST http://localhost:8080/trips/T2/cancel                      (khi chuyến ch
 | 25 | `POST /auth/login`, JSON `{"username":"' OR 1=1 --","password":"anything"}` → 401, không token. Payload email theo phiếu cũng phải 400/401. |
 | 26 | Rating/profile với script như trên → output escape. |
 | 27 | Sửa payload `sub` và `role` trong token, giữ signature cũ rồi `GET /admin/drivers` → 401. Không dùng token Admin thật để thử JWT tampering. |
-| 28 | Token Customer gọi `GET /drivers/D1` hoặc `GET /drivers/nearby?...` → 403; bỏ token → 401. |
+| 28 | Token Customer gọi `GET /drivers/d1` hoặc `GET /drivers/nearby?...` → 403; bỏ token → 401. |
 | 29 | Một lần bấm Send không tạo được >1000 request/giây. Dùng phép thử tải đã có trong Collection/helper hoặc công cụ tải với `POST /bookings`; giữ ngưỡng 1000, cần chứng minh có 429 và readiness phục hồi. Không thay việc đo tải bằng một endpoint giả trả 429. |
 
-Các tiêu chí mô tả/Git/Compose/Kafka dùng [RUBRIC.md](RUBRIC.md). Để hồi quy tự động: `npm.cmd run test:manual` (sau prepare, tạo một chuyến thử) và `npm.cmd run test:postman`. Khi kết thúc manual demo, trở về cấu hình mặc định bằng `docker compose up -d auth-service payment-service booking-service`; dữ liệu được giữ lại.
+Các tiêu chí mô tả/Git/Compose/Kafka dùng [RUBRIC.md](RUBRIC.md). Các script hồi quy của bộ cũ đã được gỡ; dùng `npm.cmd run demo:check` với bộ smoke hiện tại. Khi kết thúc manual demo, trở về cấu hình mặc định bằng `docker compose up -d auth-service payment-service booking-service`; dữ liệu được giữ lại.

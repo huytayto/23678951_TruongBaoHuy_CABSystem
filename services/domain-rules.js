@@ -1,4 +1,4 @@
-const tripStatuses = ['DRIVER_ASSIGNED', 'EN_ROUTE', 'ARRIVED', 'PICKED_UP', 'IN_PROGRESS', 'COMPLETED'];
+const tripStatuses = ['DRIVER_ASSIGNED', 'IN_PROGRESS', 'COMPLETED'];
 
 function isValidCoordinates(latitude, longitude) {
   const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== '';
@@ -8,9 +8,7 @@ function isValidCoordinates(latitude, longitude) {
 }
 
 function isValidPassword(password) {
-  return typeof password === 'string' && password.length >= 8 && password.length <= 128
-    && /[a-z]/.test(password) && /[A-Z]/.test(password)
-    && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+  return typeof password === 'string';
 }
 
 function isValidSecret(secret) {
@@ -40,7 +38,8 @@ function escapeResponseStrings(value) {
 
 function isValidTripTransition(currentStatus, nextStatus) {
   const currentIndex = tripStatuses.indexOf(currentStatus);
-  return currentIndex >= 0 && tripStatuses[currentIndex + 1] === nextStatus;
+  return currentIndex >= 0 && currentIndex < tripStatuses.length - 1
+    && tripStatuses[currentIndex + 1] === nextStatus;
 }
 
 module.exports = {
